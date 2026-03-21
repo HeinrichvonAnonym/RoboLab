@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package franka;
+
+message JointState {
+  double position = 1;
+  double velocity = 2;
+  double effort = 3;
+}
+
+message JointCommand {
+  double position = 1;
+  double velocity = 2;
+  double effort = 3;
+}
+
+message JointStateArray {
+  repeated JointState states = 1;
+}

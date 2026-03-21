@@ -1,0 +1,8 @@
+build/
+proto/*.cc
+proto/*.h
+proto/*.pb.h
+proto/*.pb.cc
+proto/*.pb.h
+proto/*.py
+

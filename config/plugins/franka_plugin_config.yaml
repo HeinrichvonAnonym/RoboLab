@@ -1,0 +1,9 @@
+robot_ip: 172.16.0.40
+
+control_mode: "position"
+
+topic: "robot/command"
+
+dynamic:
+  kp: [100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0]
+  kd: [10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0]
