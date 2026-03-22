@@ -1,7 +1,7 @@
 find_package(Threads REQUIRED)
 
 add_library(
-  robo_lab STATIC
+  robo_lab SHARED
   robo_lab.cpp
   message_system.cpp
   framework.cpp)

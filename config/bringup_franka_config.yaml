@@ -7,6 +7,8 @@ plugins:
   - name: franka_plugin
     config: config/plugins/franka_plugin_config.yaml
     lib: ./build/plugins/libfranka_plugin.so
-  - name: franka_plugin_2
-    config: config/plugins/franka_plugin_config_2.yaml
-    lib: ./build/plugins/libfranka_plugin.so
+  
+  - name: kinect_plugin
+    config: config/plugins/kinect_plugin_config.yaml
+    lib: ./build/plugins/libkinect_plugin.so
+

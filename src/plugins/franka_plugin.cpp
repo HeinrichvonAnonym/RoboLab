@@ -1,80 +1,117 @@
 #include "plugins/franka_plugin.h"
 
-#include <algorithm>
-#include <cctype>
 #include <chrono>
-#include <fstream>
+#include <functional>
 #include <iostream>
 #include <thread>
+
+#include <yaml-cpp/yaml.h>
+
+#include "franka.pb.h"
 
 namespace robo_lab {
 
 namespace {
 
-std::string trim(std::string s) {
-  auto not_space = [](unsigned char c) { return !std::isspace(c); };
-  s.erase(s.begin(), std::find_if(s.begin(), s.end(), not_space));
-  s.erase(std::find_if(s.rbegin(), s.rend(), not_space).base(), s.end());
-  if (s.size() >= 2 &&
-      ((s.front() == '"' && s.back() == '"') || (s.front() == '\'' && s.back() == '\''))) {
-    s = s.substr(1, s.size() - 2);
+bool read_double_sequence(const YAML::Node& node, const char* key, std::vector<double>* out) {
+  if (!node || !node[key] || !node[key].IsSequence()) {
+    return false;
   }
-  return s;
-}
-
-std::string strip_comment(std::string line) {
-  for (std::size_t i = 0; i < line.size(); ++i) {
-    if (line[i] == '#') {
-      line.resize(i);
-      break;
+  out->clear();
+  for (const auto& item : node[key]) {
+    if (!item.IsScalar()) {
+      return false;
     }
+    out->push_back(item.as<double>());
   }
-  return trim(line);
+  return true;
 }
 
 }  // namespace
 
 bool FrankaPlugin::initialize(const std::string& config_path) {
   config_path_ = config_path;
-  std::ifstream f(config_path);
-  if (!f) {
-    std::cerr << "franka_plugin: cannot open config: " << config_path << '\n';
+
+  YAML::Node root;
+  try {
+    
+    root = YAML::LoadFile(config_path);
+
+    message_system_ = std::make_unique<MessageSystem>();
+    message_system_->initialize();
+
+    if (root["dynamic"]) {
+        const YAML::Node dyn = root["dynamic"];
+        const bool has_kp = dyn["kp"] && dyn["kp"].IsSequence();
+        const bool has_kd = dyn["kd"] && dyn["kd"].IsSequence();
+        if (has_kp != has_kd) {
+          std::cerr << "franka_plugin: provide both dynamic.kp and dynamic.kd or omit dynamic in "
+                    << config_path << '\n';
+          return false;
+        }
+        if (has_kp) {
+          if (!read_double_sequence(dyn, "kp", &kp_gains_) ||
+              !read_double_sequence(dyn, "kd", &kd_gains_)) {
+            std::cerr << "franka_plugin: dynamic.kp / dynamic.kd must be numeric sequences in " << config_path
+                      << '\n';
+            return false;
+          }
+          if (kp_gains_.size() != kd_gains_.size()) {
+            std::cerr << "franka_plugin: dynamic.kp and dynamic.kd length mismatch in " << config_path << '\n';
+            return false;
+          }
+        }
+    }
+
+    if (!root["robot_ip"]) {
+      std::cerr << "franka_plugin: robot_ip missing in " << config_path << '\n';
+      return false;
+    }
+    robot_ip_ = root["robot_ip"].as<std::string>();
+
+    if (root["topic"]) {
+      topic_ = root["topic"].as<std::string>();
+    }
+    if (topic_.empty()) {
+      topic_ = "robot/command";
+    }
+    message_system_->subscribe(
+        topic_, std::bind(&FrankaPlugin::cmd_subscriber_callback, this, std::placeholders::_1, std::placeholders::_2));
+
+    if (root["control_mode"]) {
+      control_mode_ = root["control_mode"].as<std::string>();
+    }
+
+    
+  } catch (const YAML::Exception& e) {
+    std::cerr << "franka_plugin: YAML error in " << config_path << ": " << e.what() << '\n';
     return false;
-  }
-
-  std::string line;
-  while (std::getline(f, line)) {
-    line = strip_comment(line);
-    if (line.empty()) {
-      continue;
-    }
-    const auto colon = line.find(':');
-    if (colon == std::string::npos) {
-      continue;
-    }
-    const std::string key = trim(line.substr(0, colon));
-    std::string val = trim(line.substr(colon + 1));
-    if (key == "robot_ip") {
-      robot_ip_ = val;
-    } else if (key == "topic") {
-      topic_ = val;
-    } else if (key == "control_mode") {
-      control_mode_ = val;
-    }
-  }
-
-  if (robot_ip_.empty()) {
-    std::cerr << "franka_plugin: robot_ip missing in " << config_path << '\n';
-    return false;
-  }
-
-  if (topic_.empty()) {
-    topic_ = "robot/command";
   }
 
   std::cout << "franka_plugin: initialized (robot_ip=" << robot_ip_ << ", topic=" << topic_
-            << ", control_mode=" << control_mode_ << ")\n";
+            << ", control_mode=" << control_mode_;
+  if (!kp_gains_.empty()) {
+    std::cout << ", gains n=" << kp_gains_.size();
+  }
+  std::cout << ")\n";
   return true;
+}
+
+void FrankaPlugin::cmd_subscriber_callback(const std::string& key, const std::string& payload) {
+  franka::RobotCommand cmd;
+  if (!cmd.ParseFromString(payload)) {
+    std::cerr << "franka_plugin: RobotCommand protobuf parse failed (key=" << key << ", bytes=" << payload.size()
+              << ")\n";
+    return;
+  }
+  std::cout << "franka_plugin: RobotCommand key=" << key << " type=" << static_cast<int>(cmd.type())
+            << " seq=" << cmd.sequence() << " mode=" << cmd.mode() << " note=" << cmd.note()
+            << " joints=" << cmd.joints_size();
+  for (int i = 0; i < cmd.joints_size(); ++i) {
+    const auto& j = cmd.joints(i);
+    std::cout << " [" << i << "]: pos=" << j.position() << " vel=" << j.velocity() << " effort=" << j.effort();
+  }
+  std::cout << '\n';
 }
 
 void FrankaPlugin::run() {
@@ -85,8 +122,7 @@ void FrankaPlugin::run() {
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
     ++tick;
     if (tick % 10 == 0) {
-      std::cout << "franka_plugin: heartbeat tick=" << tick << " topic=" << topic_
-                << " robot_ip=" << robot_ip_ << " mode=" << control_mode_ << '\n';
+      // 
     }
   }
   std::cout << "franka_plugin: run loop exited\n";

@@ -6,3 +6,6 @@ proto/*.pb.cc
 proto/*.pb.h
 proto/*.py
 
+# Python protobuf output (run scripts/regen_proto_py.sh or let publish_demo_command.py call protoc)
+scripts/gen/
+

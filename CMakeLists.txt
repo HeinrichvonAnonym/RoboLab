@@ -47,6 +47,37 @@ else()
       "  Or install zenohc and set CMAKE_PREFIX_PATH, or set -DROBOLAB_ZENOHC_ROOT=/path/to/zenoh-c")
 endif()
 
+# Protobuf: every *.proto under proto/ is compiled automatically (no per-file CMake edits).
+find_package(Protobuf REQUIRED)
+file(
+  GLOB_RECURSE ROBO_LAB_PROTO_FILES CONFIGURE_DEPENDS
+  "${CMAKE_SOURCE_DIR}/proto/*.proto")
+list(SORT ROBO_LAB_PROTO_FILES)
+if(NOT ROBO_LAB_PROTO_FILES)
+  message(FATAL_ERROR "No .proto files under ${CMAKE_SOURCE_DIR}/proto")
+endif()
+protobuf_generate_cpp(ROBO_LAB_PROTO_SRCS ROBO_LAB_PROTO_HDRS ${ROBO_LAB_PROTO_FILES})
+add_library(robo_lab_proto STATIC ${ROBO_LAB_PROTO_SRCS} ${ROBO_LAB_PROTO_HDRS})
+target_include_directories(robo_lab_proto PUBLIC "${CMAKE_BINARY_DIR}")
+set_target_properties(robo_lab_proto PROPERTIES POSITION_INDEPENDENT_CODE ON)
+if(TARGET protobuf::libprotobuf)
+  target_link_libraries(robo_lab_proto PUBLIC protobuf::libprotobuf)
+else()
+  target_include_directories(robo_lab_proto PUBLIC ${PROTOBUF_INCLUDE_DIRS})
+  target_link_libraries(robo_lab_proto PUBLIC ${PROTOBUF_LIBRARIES})
+endif()
+
+# Third-party libs before plugins so targets (Franka::Franka, freenect2) exist when src/plugins links them.
+add_subdirectory(third_party/libfranka-0.9.0)
+
+# libfreenect2 defaults ENABLE_CUDA=ON; nvcc then needs a working host C++ compiler (g++/cc1plus).
+# Turn CUDA off here unless you explicitly opt in (avoids "cannot execute cc1plus" when g++ isn't set up for nvcc).
+option(ROBOLAB_LIBFREENECT2_CUDA "Build bundled libfreenect2 with CUDA depth processor" OFF)
+set(ENABLE_CUDA
+    ${ROBOLAB_LIBFREENECT2_CUDA}
+    CACHE BOOL "libfreenect2: CUDA support" FORCE)
+
+add_subdirectory(third_party/libfreenect2)
+
 add_subdirectory(src)
 add_subdirectory(apps)
-add_subdirectory(third_party/libfranka-0.9.0)

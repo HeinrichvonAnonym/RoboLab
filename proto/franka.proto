@@ -17,3 +17,17 @@ message JointCommand {
 message JointStateArray {
   repeated JointState states = 1;
 }
+
+/// Wire format for Zenoh topic payloads (e.g. robot/command).
+message RobotCommand {
+  enum Type {
+    TYPE_UNSPECIFIED = 0;
+    TYPE_DEMO = 1;
+    TYPE_JOINT_TARGET = 2;
+  }
+  Type type = 1;
+  uint32 sequence = 2;
+  string mode = 3;
+  string note = 4;
+  repeated JointCommand joints = 5;
+}
