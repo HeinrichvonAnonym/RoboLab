@@ -72,7 +72,7 @@ add_subdirectory(third_party/libfranka-0.9.0)
 
 # libfreenect2 defaults ENABLE_CUDA=ON; nvcc then needs a working host C++ compiler (g++/cc1plus).
 # Turn CUDA off here unless you explicitly opt in (avoids "cannot execute cc1plus" when g++ isn't set up for nvcc).
-option(ROBOLAB_LIBFREENECT2_CUDA "Build bundled libfreenect2 with CUDA depth processor" OFF)
+option(ROBOLAB_LIBFREENECT2_CUDA "Build bundled libfreenect2 with CUDA depth processor" ON)
 set(ENABLE_CUDA
     ${ROBOLAB_LIBFREENECT2_CUDA}
     CACHE BOOL "libfreenect2: CUDA support" FORCE)

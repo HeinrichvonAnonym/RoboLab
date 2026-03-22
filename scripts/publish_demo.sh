@@ -1,1 +1,0 @@
-python publish_demo_command.py --key "robot/command" --count 100 --interval 1.0 --joint-pos 0.0 0.0 0.0 0.0 0.0 0.0 0.0
