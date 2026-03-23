@@ -36,8 +36,8 @@ class FrankaPlugin : public Plugin {
 
   void cmd_subscriber_callback(const std::string& key, const std::string& payload);
 
-  franka::Robot* robot_ = nullptr;
-  franka::Model* model_ = nullptr;
-  franka::Gripper* gripper_ = nullptr;
+  std::unique_ptr<franka::Robot> robot_;
+  std::unique_ptr<franka::Model> model_;
+  std::unique_ptr<franka::Gripper> gripper_;
 };
 }  // namespace robo_lab

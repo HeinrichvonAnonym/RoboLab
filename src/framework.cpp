@@ -314,6 +314,9 @@ void Framework::run_until_signal() {
   stop_requested_ = true;
   std::cout << "framework: shutdown signal received, stopping plugins...\n";
 
+  // sleep for 2 s
+  std::this_thread::sleep_for(std::chrono::seconds(2));
+
   for (auto& L : loaded_) {
     if (L->plugin) {
       L->plugin->stop();

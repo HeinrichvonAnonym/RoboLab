@@ -68,6 +68,7 @@ bool FrankaPlugin::initialize(const std::string& config_path) {
       return false;
     }
     robot_ip_ = root["robot_ip"].as<std::string>();
+    robot_ = std::make_unique<franka::Robot>(robot_ip_);
 
     if (root["topic"]) {
       topic_ = root["topic"].as<std::string>();
@@ -123,12 +124,15 @@ void FrankaPlugin::run() {
     ++tick;
     if (tick % 10 == 0) {
       // 
+      franka::RobotState robot_state = robot_->readOnce();
+     
     }
   }
   std::cout << "franka_plugin: run loop exited\n";
 }
 
 void FrankaPlugin::stop() {
+  message_system_->close();
   stop_ = true;
 }
 

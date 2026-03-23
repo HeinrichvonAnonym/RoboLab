@@ -1,7 +1,13 @@
 topic: 
-  - "kinec2/depth"
-  - "kinec2/rgb"
-  - "kinec2/ir"
+  depth: "kinec2/depth"
+  rgb: "kinec2/rgb"
+  ir: "kinec2/ir"
+
+fps: 10
+
+enable_rgb: true
+enable_depth: true
+enable_viewer: true
 
 serial: "064158435247"
 

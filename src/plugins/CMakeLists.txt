@@ -37,7 +37,13 @@ target_compile_features(franka_plugin PRIVATE cxx_std_17)
 
 # 
 # Kinect plugin
-add_library(kinect_plugin MODULE kinect_plugin.cpp)
+add_library(
+  kinect_plugin
+  MODULE
+  kinect_plugin.cpp
+  ${CMAKE_SOURCE_DIR}/third_party/libfreenect2/examples/viewer.cpp
+  ${CMAKE_SOURCE_DIR}/third_party/libfreenect2/src/flextGL.cpp
+)
 # libfreenect2 uses directory-scoped include_directories(); that often does not populate
 # INTERFACE_INCLUDE_DIRECTORIES, so linking freenect2 alone may not add its headers for consumers.
 # what a piece of shit 
@@ -46,7 +52,10 @@ set(_robo_freenect2_src "${CMAKE_SOURCE_DIR}/third_party/libfreenect2")
 set(_robo_freenect2_bin "${CMAKE_BINARY_DIR}/third_party/libfreenect2")
 target_include_directories(
   kinect_plugin
-  PRIVATE "${CMAKE_SOURCE_DIR}/include" "${_robo_freenect2_src}/include" "${_robo_freenect2_bin}")
+  PRIVATE "${CMAKE_SOURCE_DIR}/include"
+          "${_robo_freenect2_src}/include"
+          "${_robo_freenect2_src}/src"
+          "${_robo_freenect2_bin}")
 
 target_link_libraries(kinect_plugin PRIVATE robo_lab robo_lab_proto yaml-cpp::yaml-cpp freenect2)
 
