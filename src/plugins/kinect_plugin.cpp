@@ -1,6 +1,8 @@
 #include "plugins/kinect_plugin.h"
 
 #include <chrono>
+#include <ctime>
+#include <iomanip>
 #include <iostream>
 #include <thread>
 
@@ -191,33 +193,43 @@ void KinectPlugin::run() {
     return;
   }
 
-  // Open device by serial number. Pipeline is owned/freed by libfreenect2.
-  libfreenect2::PacketPipeline* pipeline = nullptr;
+  bool viewer_initialized = false;
+  int reconnect_attempt = 0;
+  while (!stop_) {
+    // Open device by serial number. Pipeline is owned/freed by libfreenect2.
+    libfreenect2::PacketPipeline* pipeline = nullptr;
 #ifdef LIBFREENECT2_WITH_CUDA_SUPPORT
-  pipeline = new libfreenect2::CudaPacketPipeline();
-  std::cout << "kinect_plugin: using CUDA packet pipeline\n";
+    pipeline = new libfreenect2::CudaPacketPipeline();
+    std::cout << "kinect_plugin: using CUDA packet pipeline\n";
 #else
-  pipeline = new libfreenect2::CpuPacketPipeline();
-  std::cout << "kinect_plugin: CUDA unavailable, using CPU packet pipeline\n";
+    pipeline = new libfreenect2::CpuPacketPipeline();
+    std::cout << "kinect_plugin: CUDA unavailable, using CPU packet pipeline\n";
 #endif
-  libfreenect2::Freenect2Device* dev = freenect2.openDevice(serial_, pipeline);
-  if (dev == nullptr) {
-    std::cerr << "kinect_plugin: failed to open Kinect device by serial: " << serial_ << '\n';
-    running_ = false;
-    return;
-  }
-  {
-    std::lock_guard<std::mutex> lk(dev_mutex_);
-    dev_ = dev;
-  }
+    libfreenect2::Freenect2Device* dev = freenect2.openDevice(serial_, pipeline);
+    if (dev == nullptr) {
+      std::cerr << "kinect_plugin: failed to open Kinect device by serial: " << serial_ << '\n';
+      reconnect_attempt++;
+      const int backoff_ms = std::min(3000, 300 * reconnect_attempt);
+      std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
+      continue;
+    }
+    {
+      std::lock_guard<std::mutex> lk(dev_mutex_);
+      dev_ = dev;
+    }
 
-  libfreenect2::SyncMultiFrameListener listener(types);
-  dev->setColorFrameListener(&listener);
-  dev->setIrAndDepthFrameListener(&listener);
+    libfreenect2::SyncMultiFrameListener listener(types);
+    dev->setColorFrameListener(&listener);
+    dev->setIrAndDepthFrameListener(&listener);
 
-  // Start streams like Protonect: start() for both enabled, else startStreams().
-  if (enable_rgb_ && enable_depth_) {
-    if (!dev->start()) {
+    bool started = false;
+    if (enable_rgb_ && enable_depth_) {
+      started = dev->start();
+    } else {
+      started = dev->startStreams(enable_rgb_, enable_depth_);
+    }
+
+    if (!started) {
       std::cerr << "kinect_plugin: failed to start Kinect streams\n";
       dev->close();
       delete dev;
@@ -225,175 +237,204 @@ void KinectPlugin::run() {
         std::lock_guard<std::mutex> lk(dev_mutex_);
         dev_ = nullptr;
       }
-      running_ = false;
-      return;
-    }
-  } else {
-    if (!dev->startStreams(enable_rgb_, enable_depth_)) {
-      std::cerr << "kinect_plugin: failed to start Kinect streams (subset)\n";
-      dev->close();
-      delete dev;
-      {
-        std::lock_guard<std::mutex> lk(dev_mutex_);
-        dev_ = nullptr;
-      }
-      running_ = false;
-      return;
-    }
-  }
-
-  std::cout << "kinect_plugin: connected to Kinect v2 serial=" << dev->getSerialNumber() << '\n';
-
-  if (enable_viewer_ && viewer_) {
-    viewer_->initialize();
-  }
-
-  auto last_pub = std::chrono::steady_clock::now() - std::chrono::milliseconds(kPublishEveryMs);
-  int timeout_count = 0;
-  int received_count = 0;
-
-  while (!stop_) {
-    libfreenect2::FrameMap frames;
-
-    // Protonect waits ~10s; we also check periodically for stop().
-    if (!listener.waitForNewFrame(frames, 10 * 1000)) {
-      timeout_count++;
-      if (timeout_count % 5 == 0) {
-        std::cerr << "kinect_plugin: waitForNewFrame timed out x" << timeout_count
-                  << " (last received=" << received_count
-                  << "). Check USB permissions/LED/startup.\n";
-      }
+      reconnect_attempt++;
+      const int backoff_ms = std::min(3000, 300 * reconnect_attempt);
+      std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
       continue;
     }
+    reconnect_attempt = 0;
 
-    received_count++;
+    std::cout << "kinect_plugin: connected to Kinect v2 serial=" << dev->getSerialNumber() << '\n';
 
-    // Extract pointers (valid until listener.release(frames)).
-    libfreenect2::Frame* rgb = nullptr;
-    libfreenect2::Frame* ir = nullptr;
-    libfreenect2::Frame* depth = nullptr;
-    auto it_rgb = frames.find(libfreenect2::Frame::Color);
-    if (it_rgb != frames.end()) {
-      rgb = it_rgb->second;
-    }
-    auto it_ir = frames.find(libfreenect2::Frame::Ir);
-    if (it_ir != frames.end()) {
-      ir = it_ir->second;
-    }
-    auto it_depth = frames.find(libfreenect2::Frame::Depth);
-    if (it_depth != frames.end()) {
-      depth = it_depth->second;
+    if (!viewer_initialized && enable_viewer_ && viewer_) {
+      viewer_->initialize();
+      viewer_initialized = true;
     }
 
-    update_viewer(rgb, ir, depth);
+    auto last_pub = std::chrono::steady_clock::now() - std::chrono::milliseconds(kPublishEveryMs);
+    int timeout_count = 0;
+    int received_count = 0;
+    int consecutive_timeouts = 0;
+    bool reconnect_requested = false;
 
-    const auto now = std::chrono::steady_clock::now();
-    const bool do_publish = (now - last_pub) >= std::chrono::milliseconds(kPublishEveryMs);
+    int frame_count = 0;
 
-    // Copy frame data for protobuf publishing, then release listener frames.
-    // This prevents heavy protobuf serialization from stalling capture.
-    FramePayloadCopy rgb_copy;
-    FramePayloadCopy depth_copy;
-    FramePayloadCopy ir_copy;
-    bool have_rgb_copy = false;
-    bool have_depth_copy = false;
-    bool have_ir_copy = false;
+    while (!stop_) {
+      libfreenect2::FrameMap frames;
 
-    auto copy_one = [&](libfreenect2::Frame* f,
-                         int32_t proto_type,
-                         FramePayloadCopy* out,
-                         bool* have_out) {
-      if (!f) {
-        return;
-      }
-      out->width = static_cast<int32_t>(f->width);
-      out->height = static_cast<int32_t>(f->height);
-      out->channels = static_cast<int32_t>(f->bytes_per_pixel);
-      out->step = static_cast<int32_t>(f->width * f->bytes_per_pixel);
-      out->proto_type = proto_type;
+      // Shorter timeout improves recovery latency when USB stalls.
+      if (!listener.waitForNewFrame(frames, 2 * 1000)) {
+        timeout_count++;
+        consecutive_timeouts++;
+        std::cerr << "kinect_plugin: waitForNewFrame timed out x" << timeout_count
+                  << " (consecutive=" << consecutive_timeouts
+                  << ", last received=" << received_count
+                  << "). Check USB bandwidth/power and cable.\n";
 
-      const size_t img_size = f->width * f->height * f->bytes_per_pixel;
-      out->data.assign(reinterpret_cast<const char*>(f->data), img_size);
-      *have_out = true;
-    };
-
-    if (do_publish && message_system_ && message_system_->is_open()) {
-      if (enable_rgb_) {
-        copy_one(rgb, static_cast<int32_t>(libfreenect2::Frame::Color), &rgb_copy, &have_rgb_copy);
-      }
-      if (enable_depth_) {
-        copy_one(depth, static_cast<int32_t>(libfreenect2::Frame::Depth), &depth_copy, &have_depth_copy);
-        copy_one(ir, static_cast<int32_t>(libfreenect2::Frame::Ir), &ir_copy, &have_ir_copy);
-      }
-      last_pub = now;
-    }
-
-    listener.release(frames);
-
-    // Publish after release (Protonect doesn't publish, so this is our best-effort async-ish path).
-    if (do_publish && message_system_ && message_system_->is_open()) {
-      if (enable_rgb_ && have_rgb_copy) {
-        kinect::rgbImage msg;
-        msg.set_width(rgb_copy.width);
-        msg.set_height(rgb_copy.height);
-        msg.set_channels(rgb_copy.channels);
-        msg.set_step(rgb_copy.step);
-        msg.set_type(rgb_copy.proto_type);
-        msg.set_image(rgb_copy.data.data(), rgb_copy.data.size());
-        std::string payload;
-        msg.SerializeToString(&payload);
-        (void)message_system_->publish(rgb_topic_, payload);
+        // Recover from likely USB stall/reset by reopening the device.
+        if (consecutive_timeouts >= 5) {
+          std::cerr << "kinect_plugin: repeated timeouts; reopening device\n";
+          reconnect_requested = true;
+          break;
+        }
+        continue;
       }
 
-      if (enable_depth_) {
-        if (have_depth_copy) {
+      consecutive_timeouts = 0;
+
+      received_count++;
+
+      // Extract pointers (valid until listener.release(frames)).
+      libfreenect2::Frame* rgb = nullptr;
+      libfreenect2::Frame* ir = nullptr;
+      libfreenect2::Frame* depth = nullptr;
+      auto it_rgb = frames.find(libfreenect2::Frame::Color);
+      if (it_rgb != frames.end()) {
+        rgb = it_rgb->second;
+      }
+      auto it_ir = frames.find(libfreenect2::Frame::Ir);
+      if (it_ir != frames.end()) {
+        ir = it_ir->second;
+      }
+      auto it_depth = frames.find(libfreenect2::Frame::Depth);
+      if (it_depth != frames.end()) {
+        depth = it_depth->second;
+      }
+
+      if (enable_viewer_) {
+      update_viewer(rgb, ir, depth);
+      }
+
+      const auto now = std::chrono::steady_clock::now();
+      const bool do_publish = (now - last_pub) >= std::chrono::milliseconds(kPublishEveryMs);
+
+      // Copy frame data for protobuf publishing, then release listener frames.
+      // This prevents heavy protobuf serialization from stalling capture.
+      FramePayloadCopy rgb_copy;
+      FramePayloadCopy depth_copy;
+      FramePayloadCopy ir_copy;
+      bool have_rgb_copy = false;
+      bool have_depth_copy = false;
+      bool have_ir_copy = false;
+
+      auto copy_one = [&](libfreenect2::Frame* f,
+                           int32_t proto_type,
+                           FramePayloadCopy* out,
+                           bool* have_out) {
+        if (!f) {
+          return;
+        }
+        out->width = static_cast<int32_t>(f->width);
+        out->height = static_cast<int32_t>(f->height);
+        out->channels = static_cast<int32_t>(f->bytes_per_pixel);
+        out->step = static_cast<int32_t>(f->width * f->bytes_per_pixel);
+        out->proto_type = proto_type;
+
+        const size_t img_size = f->width * f->height * f->bytes_per_pixel;
+        out->data.assign(reinterpret_cast<const char*>(f->data), img_size);
+        *have_out = true;
+      };
+
+      if (do_publish && message_system_ && message_system_->is_open()) {
+        if (enable_rgb_) {
+          copy_one(rgb, static_cast<int32_t>(libfreenect2::Frame::Color), &rgb_copy, &have_rgb_copy);
+        }
+        if (enable_depth_) {
+          copy_one(depth, static_cast<int32_t>(libfreenect2::Frame::Depth), &depth_copy, &have_depth_copy);
+          copy_one(ir, static_cast<int32_t>(libfreenect2::Frame::Ir), &ir_copy, &have_ir_copy);
+        }
+        last_pub = now;
+      }
+
+      listener.release(frames);
+
+      // Publish after release (Protonect doesn't publish, so this is our best-effort async-ish path).
+      if (do_publish && message_system_ && message_system_->is_open()) {
+
+        if (frame_count++ % 100 == 0 && frame_count > 1) {
+          frame_count = 0;
+          const auto wall_now = std::chrono::system_clock::now();
+          const std::time_t t = std::chrono::system_clock::to_time_t(wall_now);
+          const std::tm* lt = std::localtime(&t);
+          if (lt) {
+            std::cout << "kinect_plugin: publishing frames at "
+                    << std::setw(2) << std::setfill('0') << lt->tm_hour
+                    << ":" << std::setw(2) << std::setfill('0') << lt->tm_min
+                    << ":" << std::setw(2) << std::setfill('0') << lt->tm_sec
+                      << std::endl;
+          }
+        }
+        if (enable_rgb_ && have_rgb_copy) {
           kinect::rgbImage msg;
-          msg.set_width(depth_copy.width);
-          msg.set_height(depth_copy.height);
-          msg.set_channels(depth_copy.channels);
-          msg.set_step(depth_copy.step);
-          msg.set_type(depth_copy.proto_type);
-          msg.set_image(depth_copy.data.data(), depth_copy.data.size());
+          msg.set_width(rgb_copy.width);
+          msg.set_height(rgb_copy.height);
+          msg.set_channels(rgb_copy.channels);
+          msg.set_step(rgb_copy.step);
+          msg.set_type(rgb_copy.proto_type);
+          msg.set_image(rgb_copy.data.data(), rgb_copy.data.size());
           std::string payload;
           msg.SerializeToString(&payload);
-          (void)message_system_->publish(depth_topic_, payload);
+          (void)message_system_->publish(rgb_topic_, payload);
         }
-        if (have_ir_copy) {
-          kinect::rgbImage msg;
-          msg.set_width(ir_copy.width);
-          msg.set_height(ir_copy.height);
-          msg.set_channels(ir_copy.channels);
-          msg.set_step(ir_copy.step);
-          msg.set_type(ir_copy.proto_type);
-          msg.set_image(ir_copy.data.data(), ir_copy.data.size());
-          std::string payload;
-          msg.SerializeToString(&payload);
-          (void)message_system_->publish(ir_topic_, payload);
+
+        if (enable_depth_) {
+          if (have_depth_copy) {
+            kinect::rgbImage msg;
+            msg.set_width(depth_copy.width);
+            msg.set_height(depth_copy.height);
+            msg.set_channels(depth_copy.channels);
+            msg.set_step(depth_copy.step);
+            msg.set_type(depth_copy.proto_type);
+            msg.set_image(depth_copy.data.data(), depth_copy.data.size());
+            std::string payload;
+            msg.SerializeToString(&payload);
+            (void)message_system_->publish(depth_topic_, payload);
+          }
+          if (have_ir_copy) {
+            kinect::rgbImage msg;
+            msg.set_width(ir_copy.width);
+            msg.set_height(ir_copy.height);
+            msg.set_channels(ir_copy.channels);
+            msg.set_step(ir_copy.step);
+            msg.set_type(ir_copy.proto_type);
+            msg.set_image(ir_copy.data.data(), ir_copy.data.size());
+            std::string payload;
+            msg.SerializeToString(&payload);
+            (void)message_system_->publish(ir_topic_, payload);
+          }
         }
       }
+    }
+
+    {
+      std::lock_guard<std::mutex> lk(dev_mutex_);
+      if (dev_) {
+        dev_->stop();
+        dev_->close();
+        delete dev_;
+        dev_ = nullptr;
+      }
+    }
+
+    if (!stop_ && reconnect_requested) {
+      reconnect_attempt++;
+      const int backoff_ms = std::min(3000, 300 * reconnect_attempt);
+      std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
     }
   }
 
-  dev->stop();
-  dev->close();
-  {
-    std::lock_guard<std::mutex> lk(dev_mutex_);
-    dev_ = nullptr;
-  }
-  delete dev;
   running_ = false;
+  message_system_->close();
 }
 
 void KinectPlugin::stop() {
   std::cout << "kinect_plugin: stopping\n";
   stop_ = true;
-  // Protonect shutdown ordering: request device stop before listener teardown.
-  // Stop may be called from another thread; lock and signal the active device if present.
+  // Stop may be called from another thread; signal active device to unblock wait loop.
   std::lock_guard<std::mutex> lk(dev_mutex_);
   if (dev_) {
     dev_->stop();
   }
-  message_system_->close();
 }
 
 }

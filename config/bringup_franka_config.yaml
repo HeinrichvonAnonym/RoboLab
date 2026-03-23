@@ -12,3 +12,7 @@ plugins:
     config: config/plugins/kinect_plugin_config.yaml
     lib: ./build/plugins/libkinect_plugin.so
 
+  # - name: realsense_plugin
+  #   config: config/plugins/realsense_plugin_config.yaml
+  #   lib: ./build/plugins/librealsense_plugin.so
+

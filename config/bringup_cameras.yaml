@@ -1,0 +1,15 @@
+# Run from the repository root (recommended), e.g.:
+#   ./build/apps/robo_lab_main
+#   ./build/apps/robo_lab_main /path/to/other_bringup.yaml
+#
+# With bringup under config/, lib/config paths like ./build/... resolve against repo root as well as CWD.
+plugins:
+
+  - name: kinect_plugin
+    config: config/plugins/kinect_plugin_config.yaml
+    lib: ./build/plugins/libkinect_plugin.so
+
+  - name: realsense_plugin
+     config: config/plugins/realsense_plugin_config.yaml
+     lib: ./build/plugins/librealsense_plugin.so
+

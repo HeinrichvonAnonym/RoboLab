@@ -67,3 +67,20 @@ set_target_properties(
              BUILD_RPATH "${CMAKE_BINARY_DIR}/src;$<TARGET_FILE_DIR:freenect2>")
 
 target_compile_features(kinect_plugin PRIVATE cxx_std_17)
+
+# Realsense plugin
+if(TARGET realsense2)
+  add_library(realsense_plugin MODULE realsense_plugin.cpp)
+
+  target_include_directories(realsense_plugin PRIVATE "${CMAKE_SOURCE_DIR}/include")
+  target_link_libraries(realsense_plugin PRIVATE robo_lab robo_lab_proto yaml-cpp::yaml-cpp realsense2)
+
+  set_target_properties(
+    realsense_plugin
+    PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
+               OUTPUT_NAME "realsense_plugin"
+               POSITION_INDEPENDENT_CODE ON
+               BUILD_RPATH "${CMAKE_BINARY_DIR}/src;$<TARGET_FILE_DIR:realsense2>")
+
+  target_compile_features(realsense_plugin PRIVATE cxx_std_17)
+endif()

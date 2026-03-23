@@ -3,11 +3,11 @@ topic:
   rgb: "kinec2/rgb"
   ir: "kinec2/ir"
 
-fps: 10
+fps: 15
 
 enable_rgb: true
 enable_depth: true
-enable_viewer: true
+enable_viewer: false
 
 serial: "064158435247"
 

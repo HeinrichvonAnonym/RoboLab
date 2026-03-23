@@ -1,0 +1,14 @@
+topic: 
+  depth: "realsense/depth"
+  rgb: "realsense/rgb"
+  ir: "realsense/ir"
+
+fps: 15
+
+enable_rgb: true
+enable_depth: true
+
+use_opengl: false
+
+
+

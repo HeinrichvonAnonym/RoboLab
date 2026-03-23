@@ -57,9 +57,12 @@ if(NOT ROBO_LAB_PROTO_FILES)
   message(FATAL_ERROR "No .proto files under ${CMAKE_SOURCE_DIR}/proto")
 endif()
 protobuf_generate_cpp(ROBO_LAB_PROTO_SRCS ROBO_LAB_PROTO_HDRS ${ROBO_LAB_PROTO_FILES})
-add_library(robo_lab_proto STATIC ${ROBO_LAB_PROTO_SRCS} ${ROBO_LAB_PROTO_HDRS})
+add_library(robo_lab_proto SHARED ${ROBO_LAB_PROTO_SRCS} ${ROBO_LAB_PROTO_HDRS})
 target_include_directories(robo_lab_proto PUBLIC "${CMAKE_BINARY_DIR}")
-set_target_properties(robo_lab_proto PROPERTIES POSITION_INDEPENDENT_CODE ON)
+set_target_properties(
+  robo_lab_proto
+  PROPERTIES POSITION_INDEPENDENT_CODE ON
+             BUILD_RPATH "${CMAKE_BINARY_DIR}/src")
 if(TARGET protobuf::libprotobuf)
   target_link_libraries(robo_lab_proto PUBLIC protobuf::libprotobuf)
 else()
@@ -68,6 +71,16 @@ else()
 endif()
 
 # Third-party libs before plugins so targets (Franka::Franka, freenect2) exist when src/plugins links them.
+# Default to library-only third-party builds (no examples/tools/tests executables).
+# zenoh-c is intentionally not touched.
+option(ROBOLAB_THIRDPARTY_EXECUTABLES "Enable executables in third_party modules (except zenoh/zenoh-c)" OFF)
+
+set(BUILD_TESTS
+    ${ROBOLAB_THIRDPARTY_EXECUTABLES}
+    CACHE BOOL "libfranka: build tests" FORCE)
+set(BUILD_EXAMPLES
+    ${ROBOLAB_THIRDPARTY_EXECUTABLES}
+    CACHE BOOL "libfranka/libfreenect2/librealsense: build examples" FORCE)
 add_subdirectory(third_party/libfranka-0.9.0)
 
 # libfreenect2 defaults ENABLE_CUDA=ON; nvcc then needs a working host C++ compiler (g++/cc1plus).
@@ -78,6 +91,34 @@ set(ENABLE_CUDA
     CACHE BOOL "libfreenect2: CUDA support" FORCE)
 
 add_subdirectory(third_party/libfreenect2)
+
+
+
+# librealsense is optional and currently not required for Kinect v2 plugin path.
+# Keep it disabled by default to avoid nested-project path assumptions
+# (e.g. examples/tools including ${CMAKE_SOURCE_DIR}/CMake/*).
+option(ROBOLAB_BUILD_LIBREALSENSE "Build bundled librealsense" OFF)
+if(ROBOLAB_BUILD_LIBREALSENSE)
+  set(BUILD_TOOLS
+      ${ROBOLAB_THIRDPARTY_EXECUTABLES}
+      CACHE BOOL "librealsense: build tools" FORCE)
+  set(BUILD_UNIT_TESTS
+      ${ROBOLAB_THIRDPARTY_EXECUTABLES}
+      CACHE BOOL "librealsense: build unit tests" FORCE)
+  set(BUILD_GRAPHICAL_EXAMPLES
+      ${ROBOLAB_THIRDPARTY_EXECUTABLES}
+      CACHE BOOL "librealsense: build graphical examples" FORCE)
+  set(BUILD_PC_STITCHING
+      ${ROBOLAB_THIRDPARTY_EXECUTABLES}
+      CACHE BOOL "librealsense: build point-cloud stitching tool" FORCE)
+  set(CHECK_FOR_UPDATES
+      OFF
+      CACHE BOOL "librealsense: online update checks in tools" FORCE)
+  set(IMPORT_DEPTH_CAM_FW
+      OFF
+      CACHE BOOL "librealsense: download embedded FW resources" FORCE)
+  add_subdirectory(third_party/librealsense)
+endif()
 
 add_subdirectory(src)
 add_subdirectory(apps)
