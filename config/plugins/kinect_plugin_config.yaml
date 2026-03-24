@@ -3,7 +3,7 @@ topic:
   rgb: "kinec2/rgb"
   ir: "kinec2/ir"
 
-fps: 15
+fps: 20
 
 enable_rgb: true
 enable_depth: true

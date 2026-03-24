@@ -1,0 +1,1 @@
+python python/robo_lab/model/utils/convert_pth_to_nnx.py
