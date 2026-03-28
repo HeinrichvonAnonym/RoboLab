@@ -8,4 +8,10 @@ proto/*.py
 
 # Python protobuf output (run scripts/regen_proto_py.sh or let publish_demo_command.py call protoc)
 scripts/gen/
+checkpoints/pth/*.pth
+checkpoints/onnx/*.onnx
+checkpoints/trt/*.engine
+
+third_party/TensorRT/build/
+third_party/TensorRT-10.2.0.19/
 

@@ -1,0 +1,2 @@
+# Plugin wrapper: points to the full inference YAML (obs/action/session/policy).
+inference_config: config/inference/demo_inference_config.yaml

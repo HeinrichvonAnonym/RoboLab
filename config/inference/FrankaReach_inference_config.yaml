@@ -1,0 +1,44 @@
+obs:
+  tensor_min: -1
+  tensor_max: 1
+  members:
+    - topic: "robot4/state/joint_pos"
+      type: float32
+      dim: 7
+      offset: [0, 0, 0, 0, 0, 0, 0]
+      scale: [3.14159, 3.14159, 3.14159, 3.14159, 3.14159, 3.14159, 3.14159]
+      use_clip: true
+    
+    - topic: "robot4/state/gripper_pos"
+      type: float32
+      dim: 1
+      offset: [0]
+      scale: [0.04]
+      use_clip: true
+
+action:
+  tensor_min: -1
+  tensor_max: 1
+  members:
+    - topic: "robot4/action/joint_pos"
+      type: float32
+      dim: 7
+      offset: [0, 0, 0, 0, 0, 0, 0]
+      scale: [3.14159, 3.14159, 3.14159, 3.14159, 3.14159, 3.14159, 3.14159]
+      use_clip: true
+
+
+session:
+  type: trt
+  model_path: "checkpoints/trt/FrankaCubeReach.engine"
+
+
+policy:
+  frequency: 50
+  use_chunk: false
+  chunk_size: 1
+
+  
+
+    
+

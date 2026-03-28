@@ -120,5 +120,6 @@ if(ROBOLAB_BUILD_LIBREALSENSE)
   add_subdirectory(third_party/librealsense)
 endif()
 
+# add_subdirectory(third_party/ugv_sdk)
 add_subdirectory(src)
 add_subdirectory(apps)

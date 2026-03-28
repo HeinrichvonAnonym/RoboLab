@@ -1,0 +1,31 @@
+# Demo inference config (TensorRT + IO mapping). Engine path is relative to repo root / CWD.
+obs:
+  tensor_min: -1
+  tensor_max: 1
+  members:
+    - topic: "demo/obs/state"
+      type: float32
+      dim: 7
+      offset: [0, 0, 0, 0, 0, 0, 0]
+      scale: [1, 1, 1, 1, 1, 1, 1]
+      use_clip: true
+
+action:
+  tensor_min: -1
+  tensor_max: 1
+  members:
+    - topic: "demo/action/command"
+      type: float32
+      dim: 7
+      offset: [0, 0, 0, 0, 0, 0, 0]
+      scale: [1, 1, 1, 1, 1, 1, 1]
+      use_clip: true
+
+session:
+  type: trt
+  model_path: "checkpoints/trt/FrankaCubeReach.engine"
+
+policy:
+  frequency: 50
+  use_chunk: false
+  chunk_size: 1

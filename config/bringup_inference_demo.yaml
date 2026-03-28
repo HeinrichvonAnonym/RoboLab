@@ -1,0 +1,4 @@
+plugins:
+  - name: demo_inference_plugin
+    config: config/plugins/demo_inference_plugin_config.yaml
+    lib: ./build/plugins/libdemo_inference_plugin.so

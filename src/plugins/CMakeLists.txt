@@ -1,22 +1,4 @@
-find_package(yaml-cpp QUIET CONFIG)
-
-if(NOT yaml-cpp_FOUND)
-  include(FetchContent)
-  set(YAML_CPP_BUILD_TESTS
-      OFF
-      CACHE BOOL "" FORCE)
-  set(YAML_CPP_BUILD_TOOLS
-      OFF
-      CACHE BOOL "" FORCE)
-  set(YAML_BUILD_SHARED_LIBS
-      OFF
-      CACHE BOOL "" FORCE)
-  FetchContent_Declare(
-    yaml-cpp
-    GIT_REPOSITORY https://github.com/jbeder/yaml-cpp.git
-    GIT_TAG yaml-cpp-0.8.0)
-  FetchContent_MakeAvailable(yaml-cpp)
-endif()
+# yaml-cpp is resolved in parent src/CMakeLists.txt
 
 # Franka plugin
 add_library(franka_plugin MODULE franka_plugin.cpp)
@@ -84,3 +66,25 @@ if(TARGET realsense2)
 
   target_compile_features(realsense_plugin PRIVATE cxx_std_17)
 endif()
+
+# Demo: TensorRT inference bridge (Zenoh float32 payloads)
+add_library(demo_inference_plugin MODULE demo_inference_plugin.cpp)
+
+target_include_directories(demo_inference_plugin PRIVATE "${CMAKE_SOURCE_DIR}/include")
+
+target_link_libraries(
+  demo_inference_plugin
+  PRIVATE robo_lab
+          robo_lab_proto
+          yaml-cpp::yaml-cpp
+          robo_lab_inference)
+
+set(_robo_trt_lib "${CMAKE_SOURCE_DIR}/third_party/TensorRT-10.2.0.19/lib")
+set_target_properties(
+  demo_inference_plugin
+  PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
+             OUTPUT_NAME "demo_inference_plugin"
+             POSITION_INDEPENDENT_CODE ON
+             BUILD_RPATH "${CMAKE_BINARY_DIR}/src;${_robo_trt_lib}")
+
+target_compile_features(demo_inference_plugin PRIVATE cxx_std_17)
