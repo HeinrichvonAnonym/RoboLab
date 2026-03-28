@@ -1,13 +1,14 @@
-# Demo inference config (TensorRT + IO mapping). Engine path is relative to repo root / CWD.
+# Demo inference config (TensorRT + IO mapping). Engine input dim must match obs dim (17 here).
+# Wire format: demo_inference.Observation (protobuf) or raw float32 bytes — see demo_inference_plugin.
 obs:
   tensor_min: -1
   tensor_max: 1
   members:
     - topic: "demo/obs/state"
       type: float32
-      dim: 7
-      offset: [0, 0, 0, 0, 0, 0, 0]
-      scale: [1, 1, 1, 1, 1, 1, 1]
+      dim: 19
+      offset: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      scale: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
       use_clip: true
 
 action:

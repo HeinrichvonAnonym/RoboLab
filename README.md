@@ -2,6 +2,11 @@
 
 *中文说明： [README_cn.md](README_cn.md)*
 
+## TODO:
+
+- achieve a log system
+- optimize build & re-build system
+
 **roboLab** is a **Zenoh-based, decentralized messaging layer** and **plugin runtime** for **embodied AI / robotics** software. Processes communicate over **Zenoh** (pub/sub, discovery, optional routing) instead of a single central ROS-like master, while robot- and sensor-specific logic lives in **dynamically loaded plugins** driven by **YAML bringup** and **Protobuf** message schemas.
 
 At its core:

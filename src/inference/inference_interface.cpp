@@ -61,6 +61,7 @@ bool InferenceInterface::inference() {
   if (!trt_session_->readFromOutputStaging(io_processor_->output_buffer)) {
     return false;
   }
+  // std::cout << "InferenceInterface: inference success" << std::endl;
   return true;
 }
 

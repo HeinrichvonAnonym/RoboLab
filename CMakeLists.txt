@@ -48,7 +48,32 @@ else()
 endif()
 
 # Protobuf: every *.proto under proto/ is compiled automatically (no per-file CMake edits).
-find_package(Protobuf REQUIRED)
+# TensorRT does not affect this.
+#
+# Common failure: Anaconda protoc is first on PATH / cached as Protobuf_PROTOC_EXECUTABLE, so
+# generated *.pb.h reference google/protobuf/port_def.inc (protobuf 3.21+), while
+# find_package links system libprotobuf 3.6.x from /usr — those headers have no port_def.inc.
+# Fix: use the same protoc family as libprotobuf (prefer system /usr/bin/protoc), or upgrade
+# libprotobuf-dev, or use conda for both headers and library (CMAKE_PREFIX_PATH).
+set(ROBOLAB_PROTOC_EXECUTABLE
+    ""
+    CACHE FILEPATH "Override protoc for .pb codegen (must match libprotobuf C++ headers)")
+option(ROBOLAB_PREFER_SYSTEM_PROTOC
+       "Prefer /usr/bin/protoc over conda so codegen matches distro libprotobuf-dev" ON)
+if(ROBOLAB_PROTOC_EXECUTABLE)
+  set(Protobuf_PROTOC_EXECUTABLE "${ROBOLAB_PROTOC_EXECUTABLE}" CACHE FILEPATH "" FORCE)
+elseif(ROBOLAB_PREFER_SYSTEM_PROTOC)
+  find_program(_ROBO_SYS_PROTOC protoc PATHS /usr/bin /usr/local/bin NO_DEFAULT_PATH)
+  if(_ROBO_SYS_PROTOC)
+    set(Protobuf_PROTOC_EXECUTABLE "${_ROBO_SYS_PROTOC}" CACHE FILEPATH "" FORCE)
+  endif()
+endif()
+
+find_package(Protobuf CONFIG QUIET)
+if(NOT Protobuf_FOUND)
+  find_package(Protobuf REQUIRED)
+endif()
+
 file(
   GLOB_RECURSE ROBO_LAB_PROTO_FILES CONFIGURE_DEPENDS
   "${CMAKE_SOURCE_DIR}/proto/*.proto")
@@ -57,17 +82,89 @@ if(NOT ROBO_LAB_PROTO_FILES)
   message(FATAL_ERROR "No .proto files under ${CMAKE_SOURCE_DIR}/proto")
 endif()
 protobuf_generate_cpp(ROBO_LAB_PROTO_SRCS ROBO_LAB_PROTO_HDRS ${ROBO_LAB_PROTO_FILES})
+
+# FindProtobuf uses Protobuf_INCLUDE_DIR (singular) and/or Protobuf_INCLUDE_DIRS.
+set(_ROBO_PROTO_INCLUDES "")
+if(DEFINED Protobuf_INCLUDE_DIRS AND Protobuf_INCLUDE_DIRS)
+  list(APPEND _ROBO_PROTO_INCLUDES ${Protobuf_INCLUDE_DIRS})
+endif()
+if(DEFINED Protobuf_INCLUDE_DIR AND Protobuf_INCLUDE_DIR)
+  list(APPEND _ROBO_PROTO_INCLUDES "${Protobuf_INCLUDE_DIR}")
+endif()
+if(DEFINED PROTOBUF_INCLUDE_DIRS AND PROTOBUF_INCLUDE_DIRS)
+  list(APPEND _ROBO_PROTO_INCLUDES ${PROTOBUF_INCLUDE_DIRS})
+endif()
+if(TARGET protobuf::libprotobuf)
+  get_target_property(_robo_pb_iface_inc protobuf::libprotobuf INTERFACE_INCLUDE_DIRECTORIES)
+  if(_robo_pb_iface_inc AND NOT _robo_pb_iface_inc MATCHES "-NOTFOUND$")
+    list(APPEND _ROBO_PROTO_INCLUDES ${_robo_pb_iface_inc})
+  endif()
+endif()
+if(NOT _ROBO_PROTO_INCLUDES)
+  find_path(
+    _ROBO_PROTOBUF_PARENT_DIR
+    google/protobuf/message.h
+    PATHS /usr/include
+          /usr/local/include
+          "$ENV{CONDA_PREFIX}/include"
+          "$ENV{HOME}/miniconda3/include"
+          "$ENV{HOME}/anaconda3/include")
+  if(_ROBO_PROTOBUF_PARENT_DIR)
+    list(APPEND _ROBO_PROTO_INCLUDES "${_ROBO_PROTOBUF_PARENT_DIR}")
+  endif()
+endif()
+if(_ROBO_PROTO_INCLUDES)
+  list(REMOVE_DUPLICATES _ROBO_PROTO_INCLUDES)
+endif()
+
+# Fail fast if generated headers need port_def.inc but no include tree provides it.
+set(_ROBO_PB_SAMPLE "${CMAKE_BINARY_DIR}/franka.pb.h")
+if(NOT EXISTS "${_ROBO_PB_SAMPLE}")
+  set(_ROBO_PB_SAMPLE "${CMAKE_BINARY_DIR}/demo_inference.pb.h")
+endif()
+if(EXISTS "${_ROBO_PB_SAMPLE}")
+  file(READ "${_ROBO_PB_SAMPLE}" LIMIT 800 _ROBO_PB_SNIP)
+  if(_ROBO_PB_SNIP MATCHES "port_def\\.inc")
+    set(_ROBO_PORT_DEF_OK OFF)
+    foreach(_d IN LISTS _ROBO_PROTO_INCLUDES)
+      if(EXISTS "${_d}/google/protobuf/port_def.inc")
+        set(_ROBO_PORT_DEF_OK ON)
+        break()
+      endif()
+    endforeach()
+    if(NOT _ROBO_PORT_DEF_OK)
+      message(
+        FATAL_ERROR
+          "Protobuf mismatch: ${Protobuf_PROTOC_EXECUTABLE} generated code that needs "
+          "google/protobuf/port_def.inc, but installed C++ headers under ${_ROBO_PROTO_INCLUDES} "
+          "are too old (typical: conda protoc + system libprotobuf-dev).\n"
+          "  Fix: reconfigure with -DROBOLAB_PREFER_SYSTEM_PROTOC=ON (default) and delete "
+          "build/*.pb.cc build/*.pb.h, OR upgrade libprotobuf-dev, OR use conda for both "
+          "(set CMAKE_PREFIX_PATH and -DROBOLAB_PROTOC_EXECUTABLE=.../protoc).")
+    endif()
+  endif()
+endif()
+
 add_library(robo_lab_proto SHARED ${ROBO_LAB_PROTO_SRCS} ${ROBO_LAB_PROTO_HDRS})
 target_include_directories(robo_lab_proto PUBLIC "${CMAKE_BINARY_DIR}")
+if(_ROBO_PROTO_INCLUDES)
+  target_include_directories(robo_lab_proto PUBLIC ${_ROBO_PROTO_INCLUDES})
+endif()
 set_target_properties(
   robo_lab_proto
   PROPERTIES POSITION_INDEPENDENT_CODE ON
              BUILD_RPATH "${CMAKE_BINARY_DIR}/src")
 if(TARGET protobuf::libprotobuf)
   target_link_libraries(robo_lab_proto PUBLIC protobuf::libprotobuf)
+elseif(Protobuf_LIBRARIES)
+  target_link_libraries(robo_lab_proto PUBLIC ${Protobuf_LIBRARIES})
 else()
-  target_include_directories(robo_lab_proto PUBLIC ${PROTOBUF_INCLUDE_DIRS})
   target_link_libraries(robo_lab_proto PUBLIC ${PROTOBUF_LIBRARIES})
+endif()
+if(NOT _ROBO_PROTO_INCLUDES)
+  message(
+    FATAL_ERROR
+      "Protobuf C++ headers not found. Install libprotobuf-dev or set Protobuf_INCLUDE_DIR.")
 endif()
 
 # Third-party libs before plugins so targets (Franka::Franka, freenect2) exist when src/plugins links them.
@@ -97,7 +194,7 @@ add_subdirectory(third_party/libfreenect2)
 # librealsense is optional and currently not required for Kinect v2 plugin path.
 # Keep it disabled by default to avoid nested-project path assumptions
 # (e.g. examples/tools including ${CMAKE_SOURCE_DIR}/CMake/*).
-option(ROBOLAB_BUILD_LIBREALSENSE "Build bundled librealsense" OFF)
+option(ROBOLAB_BUILD_LIBREALSENSE "Build bundled librealsense" ON)
 if(ROBOLAB_BUILD_LIBREALSENSE)
   set(BUILD_TOOLS
       ${ROBOLAB_THIRDPARTY_EXECUTABLES}

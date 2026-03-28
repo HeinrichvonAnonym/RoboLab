@@ -1,2 +1,5 @@
 torch
 torchvision
+# Generated *_pb2.py matches protobuf 3.x API; 4.x+ rejects old protoc output unless regenerated.
+protobuf>=3.20.0,<4.0.0
+zenoh>=1.0.0

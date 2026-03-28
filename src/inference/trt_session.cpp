@@ -317,6 +317,9 @@ bool TRTSession::writeToInputStaging(const std::vector<float>& input) {
   size_t offset = 0;
   for (const auto& s : inputStaging_) {
     size_t nfloat = s.nbytes / sizeof(float);
+    // std::cout << "TRTSession: writeToInputStaging: " << s.name << " " << s.hostPinned << " " << s.devicePtr << " " << s.nbytes << std::endl;
+    // std::cout << "TRTSession: writeToInputStaging: input.data() + offset = " << input.data() + offset << std::endl;
+    // std::cout << "TRTSession: writeToInputStaging: input.data() + offset + s.nbytes = " << input.data() + offset + s.nbytes << std::endl;
     std::memcpy(s.hostPinned, input.data() + offset, s.nbytes);
     if (!checkCuda(
             cudaMemcpyAsync(s.devicePtr, s.hostPinned, s.nbytes, cudaMemcpyHostToDevice, stream_),
@@ -336,6 +339,7 @@ bool TRTSession::AsynInfer() {
     std::cerr << "TRTSession: enqueueV3 failed" << std::endl;
     return false;
   }
+  // std::cout << "TRTSession: enqueueV3 success" << std::endl;
   return true;
 }
 

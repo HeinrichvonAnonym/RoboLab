@@ -1,5 +1,8 @@
 #include "message_system.h"
 
+#include <cstdlib>
+#include <cstring>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -27,16 +30,16 @@ void sample_handler(z_loaned_sample_t* sample, void* arg) {
   z_keyexpr_as_view_string(z_sample_keyexpr(sample), &key_view);
   const z_loaned_string_t* key_str = z_loan(key_view);
 
-  z_owned_string_t payload_owned;
-  z_bytes_to_string(z_sample_payload(sample), &payload_owned);
-  const z_loaned_string_t* payload_str = z_loan(payload_owned);
-
+  // Binary payloads (e.g. protobuf): z_bytes_to_string() requires UTF-8 and fails otherwise.
+  z_owned_slice_t payload_bytes{};
+  z_bytes_to_slice(z_sample_payload(sample), &payload_bytes);
+  const z_loaned_slice_t* pl = z_loan(payload_bytes);
   std::string key(z_string_data(key_str), z_string_len(key_str));
-  std::string payload(z_string_data(payload_str), z_string_len(payload_str));
+  std::string payload(reinterpret_cast<const char*>(z_slice_data(pl)), z_slice_len(pl));
 
   ctx->cb(key, payload);
 
-  z_drop(z_move(payload_owned));
+  z_drop(z_move(payload_bytes));
 }
 
 struct PublisherSlot {
@@ -71,6 +74,13 @@ void MessageSystem::initialize() {
 
   z_owned_config_t config;
   z_config_default(&config);
+  // Multicast scouting must stay enabled for two local peer sessions to find each other unless
+  // you use a router or explicit connect/endpoints. On noisy LANs set
+  // ROBO_LAB_ZENOH_MULTICAST_SCOUTING=0 and configure connect (see Zenoh docs / zenohd).
+  const char* mcast = std::getenv("ROBO_LAB_ZENOH_MULTICAST_SCOUTING");
+  if (mcast != nullptr && std::strcmp(mcast, "0") == 0) {
+    (void)zc_config_insert_json5(z_loan_mut(config), Z_CONFIG_MULTICAST_SCOUTING_KEY, "false");
+  }
   if (z_open(&impl_->session, z_move(config), nullptr) < 0) {
     return;
   }
@@ -121,7 +131,7 @@ bool MessageSystem::publish(const std::string& keyexpr, const std::string& paylo
   }
 
   z_owned_encoding_t encoding{};
-  z_encoding_clone(&encoding, z_encoding_text_plain());
+  z_encoding_clone(&encoding, z_encoding_zenoh_bytes());
   options.encoding = z_move(encoding);
 
   const int rc = z_publisher_put(z_loan(slot->pub), z_move(bytes), &options);

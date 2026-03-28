@@ -1,11 +1,14 @@
 #include "plugins/demo_inference_plugin.h"
 
 #include <chrono>
+#include <cstring>
 #include <filesystem>
 #include <iostream>
 #include <thread>
 
 #include <yaml-cpp/yaml.h>
+
+#include "demo_inference.pb.h"
 
 namespace robo_lab {
 namespace {
@@ -84,6 +87,7 @@ bool DemoInferencePlugin::initialize(const std::string& config_path) {
     return false;
   }
 
+
   for (const auto& topic : inference_->io_processor_->input_topics()) {
     message_system_->subscribe(topic, [this](const std::string& key, const std::string& payload) {
       on_obs_message(key, payload);
@@ -99,7 +103,26 @@ void DemoInferencePlugin::on_obs_message(const std::string& key, const std::stri
   if (!inference_ || !inference_->io_processor_) {
     return;
   }
-  if (!inference_->io_processor_->preProcess(key, payload)) {
+  // std::cout << "demo_inference_plugin: on_obs_message: key=" << key << " payload=" << payload << std::endl;
+  std::string tensor_payload;
+  demo_inference::Observation obs;
+  if (obs.ParseFromString(payload)) {
+    const int expected = static_cast<int>(inference_->io_processor_->input_buffer.size());
+    if (obs.values_size() != expected) {
+      std::cerr << "demo_inference_plugin: Observation.values size " << obs.values_size()
+                << " != config input dim " << expected << '\n';
+      return;
+    }
+    tensor_payload.resize(static_cast<size_t>(expected) * sizeof(float));
+    for (int i = 0; i < expected; ++i) {
+      float v = obs.values(i);
+      std::memcpy(tensor_payload.data() + static_cast<size_t>(i) * sizeof(float), &v, sizeof(float));
+    }
+  } else {
+    tensor_payload = payload;
+  }
+
+  if (!inference_->io_processor_->preProcess(key, tensor_payload)) {
     return;
   }
   if (!inference_->inference()) {
@@ -107,12 +130,24 @@ void DemoInferencePlugin::on_obs_message(const std::string& key, const std::stri
     return;
   }
   for (const auto& out_topic : inference_->io_processor_->output_topics()) {
-    std::string out_payload;
-    if (!inference_->io_processor_->postProcess(out_topic, &out_payload)) {
+    std::string out_raw;
+    if (!inference_->io_processor_->postProcess(out_topic, &out_raw)) {
       std::cerr << "demo_inference_plugin: postProcess failed for " << out_topic << '\n';
       continue;
     }
-    message_system_->publish(out_topic, out_payload);
+    demo_inference::Action act;
+    const size_t nfloat = out_raw.size() / sizeof(float);
+    for (size_t i = 0; i < nfloat; ++i) {
+      float v = 0.f;
+      std::memcpy(&v, out_raw.data() + i * sizeof(float), sizeof(float));
+      act.add_values(v);
+    }
+    std::string out_serialized;
+    if (!act.SerializeToString(&out_serialized)) {
+      std::cerr << "demo_inference_plugin: Action.SerializeToString failed\n";
+      continue;
+    }
+    message_system_->publish(out_topic, out_serialized);
   }
 }
 

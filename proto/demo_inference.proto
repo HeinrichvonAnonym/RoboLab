@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package demo_inference;
+
+// 19-dimensional observation (policy input). Serialized as Zenoh payload for demo/obs/state.
+message Observation {
+  repeated float values = 1;  // expected length 19
+}
+
+// 7-dimensional action (policy output). Published on demo/action/command.
+message Action {
+  repeated float values = 1;  // expected length 7
+}

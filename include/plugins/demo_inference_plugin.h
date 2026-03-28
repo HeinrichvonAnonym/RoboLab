@@ -8,9 +8,13 @@
 #include <memory>
 #include <string>
 
+#include <demo_inference.pb.h>
+
 namespace robo_lab {
 
-/// Loads a TensorRT policy via InferenceInterface and bridges Zenoh IO (float32 payloads).
+/// Loads a TensorRT policy via InferenceInterface and bridges Zenoh IO.
+/// Observation payloads: `demo_inference::Observation` protobuf (preferred) or raw float32 bytes.
+/// Action payloads: `demo_inference::Action` protobuf.
 class DemoInferencePlugin : public Plugin {
  public:
   DemoInferencePlugin() = default;
@@ -21,8 +25,11 @@ class DemoInferencePlugin : public Plugin {
   void stop() override;
 
  private:
+  // proto 
   std::string config_path_;
   std::atomic<bool> stop_{false};
+
+  // std::string action_topic_;
 
   std::unique_ptr<MessageSystem> message_system_;
   std::unique_ptr<inference::InferenceInterface> inference_;
@@ -30,6 +37,8 @@ class DemoInferencePlugin : public Plugin {
   int frequency_hz_{50};
 
   void on_obs_message(const std::string& key, const std::string& payload);
+
+  // bool publish_action(const std::string& key, const std::string& payload);
 };
 
 }  // namespace robo_lab
