@@ -99,3 +99,28 @@ set_target_properties(
              BUILD_RPATH "${CMAKE_BINARY_DIR}/src;${_robo_trt_lib}")
 
 target_compile_features(demo_inference_plugin PRIVATE cxx_std_17)
+
+# ROS <-> Zenoh raw-byte bridge plugin (optional).
+option(ROBOLAB_BUILD_ROS_BRIDGE "Build ros_bridge_plugin (requires ROS1/catkin)" ON)
+if(ROBOLAB_BUILD_ROS_BRIDGE)
+  set(PYTHON_EXECUTABLE /usr/bin/python3)
+  find_package(catkin REQUIRED COMPONENTS roscpp std_msgs)
+  add_library(ros_bridge_plugin MODULE ros_bridge_plugin.cpp)
+  target_include_directories(
+    ros_bridge_plugin
+    PRIVATE "${CMAKE_SOURCE_DIR}/include"
+            ${catkin_INCLUDE_DIRS})
+  target_link_libraries(
+    ros_bridge_plugin
+    PRIVATE robo_lab
+            robo_lab_proto
+            yaml-cpp::yaml-cpp
+            ${catkin_LIBRARIES})
+  set_target_properties(
+    ros_bridge_plugin
+    PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
+               OUTPUT_NAME "ros_bridge_plugin"
+               POSITION_INDEPENDENT_CODE ON
+               BUILD_RPATH "${CMAKE_BINARY_DIR}/src")
+  target_compile_features(ros_bridge_plugin PRIVATE cxx_std_17)
+endif()

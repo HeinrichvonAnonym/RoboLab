@@ -1,7 +1,7 @@
-roboLab_2_ros_topics
+roboLab_2_ros_topics:
   - zenoh_msg: "franka/state"
     zenoh_type: "JointState"
-    ros_msg: "/joint_states"
+    ros_msg: "franka/joint_states"
     ros_type: "sensor_msgs/JointState"
   
   - zenoh_msg: "kinec2/rgb"
@@ -9,4 +9,4 @@ roboLab_2_ros_topics
     ros_msg: "/kinect2/rgb/image_raw"
     ros_type: "sensor_msgs/Image"
 
-ros_2_roboLab_topics:
+ros_2_roboLab_topics: []

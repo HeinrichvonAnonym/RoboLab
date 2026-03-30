@@ -9,6 +9,12 @@
 #include <vector>
 
 #include <ros/ros.h>
+#include <yaml-cpp/yaml.h>
+
+namespace ros {
+class NodeHandle;
+class AsyncSpinner;
+}  // namespace ros
 
 namespace robo_lab {
 
@@ -22,22 +28,25 @@ class RosBridgePlugin : public Plugin {
   void stop() override;
 
  private:
-  struct BridgeRule {
+  struct BridgeTopic {
     std::string zenoh_msg;
     std::string zenoh_type;
     std::string ros_msg;
     std::string ros_type;
   };
 
-  bool setup_robo_to_ros(const BridgeRule& rule);
-  bool setup_ros_to_robo(const BridgeRule& rule);
+  bool load_config(const std::string& config_path);
+  static bool parse_topic_list(const YAML::Node& node, std::vector<BridgeTopic>* out);
 
   std::string config_path_;
   std::atomic<bool> stop_{false};
   std::unique_ptr<MessageSystem> message_system_;
-  std::unique_ptr<ros::NodeHandle> nh_;
-  std::vector<ros::Publisher> ros_publishers_;
-  std::vector<ros::Subscriber> ros_subscribers_;
+
+  std::vector<BridgeTopic> robo_to_ros_topics_;
+  std::vector<BridgeTopic> ros_to_robo_topics_;
+
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
 };
 
 }  // namespace robo_lab

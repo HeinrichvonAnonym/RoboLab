@@ -11,6 +11,10 @@ plugins:
   - name: kinect_plugin
     config: config/plugins/kinect_plugin_config.yaml
     lib: ./build/plugins/libkinect_plugin.so
+  
+  - name: ros_bridge_plugin
+    config: config/plugins/ros_bridge_plugin_config.yaml
+    lib: ./build/plugins/libros_bridge_plugin.so
 
   # - name: realsense_plugin
   #   config: config/plugins/realsense_plugin_config.yaml
