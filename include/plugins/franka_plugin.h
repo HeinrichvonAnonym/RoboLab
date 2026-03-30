@@ -4,6 +4,7 @@
 #include "message_system.h"
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -42,5 +43,8 @@ class FrankaPlugin : public Plugin {
   std::unique_ptr<franka::Robot> robot_;
   std::unique_ptr<franka::Model> model_;
   std::unique_ptr<franka::Gripper> gripper_;
+
+  bool publish_state(const franka::RobotState& robot_state);
+  uint32_t state_sequence_{0};
 };
 }  // namespace robo_lab

@@ -136,39 +136,101 @@ void FrankaPlugin::run() {
     std::cerr << "franka_plugin: control requires dynamic.kp and dynamic.kd with 7 values each\n";
     return;
   }
-
-  const franka::RobotState initial_state = robot_->readOnce();
-  std::array<double, 7> q_des = initial_state.q;
-  
   constexpr double kTauLimit = 60.0;  // Conservative software saturation.
 
   // Joint-space PD torque loop:
   // tau = Kp * (q_des - q) + Kd * (dq_des - dq), with dq_des = 0.
-  robot_->control(
-      [&](const franka::RobotState& robot_state, franka::Duration /*duration*/) -> franka::Torques {
-        std::array<double, 7> tau_d{};
-        for (size_t i = 0; i < 7; ++i) {
-          const double pos_err = q_des[i] - robot_state.q[i];  
-          const double vel_err = -robot_state.dq[i];
-          double tau = kp_gains_[i] * pos_err + kd_gains_[i] * vel_err;
-          if (tau > kTauLimit) {
-            tau = kTauLimit;
-          } else if (tau < -kTauLimit) {
-            tau = -kTauLimit;
-          }
-          tau_d[i] = tau;
-        }
+  // now
+  std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
 
-        franka::Torques cmd(tau_d);
-        if (stop_) {
-          return franka::MotionFinished(cmd);
+  while(!stop_) {
+  try{
+    const franka::RobotState initial_state = robot_->readOnce();
+    std::array<double, 7> q_des = initial_state.q;
+
+    robot_->control(
+        [&](const franka::RobotState& robot_state, franka::Duration /*duration*/) -> franka::Torques {
+          std::array<double, 7> tau_d{};
+          // publish
+          for (size_t i = 0; i < 7; ++i) {
+            const double pos_err = q_des[i] - robot_state.q[i];  
+            const double vel_err = -robot_state.dq[i];
+            double tau = kp_gains_[i] * pos_err + kd_gains_[i] * vel_err;
+            if (tau > kTauLimit) {
+              tau = kTauLimit;
+            } else if (tau < -kTauLimit) {
+              tau = -kTauLimit;
+            }
+            tau_d[i] = tau;
+          }
+
+          franka::Torques cmd(tau_d);
+          if (stop_) {
+            return franka::MotionFinished(cmd);
+          }
+          std::chrono::steady_clock::time_point end_time = std::chrono::steady_clock::now();
+          if(end_time - start_time > std::chrono::milliseconds(20)){
+            start_time = end_time;
+            if (!publish_state(robot_state)){
+              std::cout << "franka_plugin: publish_state failed\n"<<std::endl;
+              return franka::MotionFinished(cmd);
+            }
+          }
+          return cmd;
+        },
+        true,
+        1000.0);
+      } catch (...) {
+        // std::cout << "franka_plugin: control loop exception\n"<<std::endl;
+        const franka::RobotState robot_state = robot_->readOnce();
+        std::chrono::steady_clock::time_point end_time = std::chrono::steady_clock::now();
+        if(end_time - start_time > std::chrono::milliseconds(20)){
+          start_time = end_time;
+          if (!publish_state(robot_state)){
+            std::cout << "franka_plugin: publish_state failed\n"<<std::endl;
+            continue;
+          }
         }
-        return cmd;
-      },
-      true,
-      1000.0);
+      }
+  }
+  
 
   std::cout << "franka_plugin: run loop exited\n";
+  robot_->stop();
+}
+
+bool FrankaPlugin::publish_state(const franka::RobotState& robot_state) {
+  try
+  {
+    // std::cout << "franka_plugin: publish_state started\n"<<std::endl;
+    franka::RobotObservation obs;
+    obs.set_type(franka::RobotObservation::TYPE_JOINT_TARGET);
+    obs.set_mode(control_mode_);
+    for(int i = 0; i < 7; ++i) {
+      auto* joint = obs.add_joints();
+      joint->set_position(robot_state.q[i]);
+      joint->set_velocity(robot_state.dq[i]);
+      joint->set_effort(robot_state.tau_J[i]);
+    }
+    obs.set_sys_time(robot_state.time.toSec());
+    // obs.set_sequence(state_sequence_++);
+
+    std::string payload;
+    if (!obs.SerializeToString(&payload)) {
+      std::cout << "franka_plugin: publish_state SerializeToString failed\n"<<std::endl;
+      return false;
+    }
+    // std::cout << "franka_plugin: publish_state payload size: " << payload.size() << std::endl;
+    if (!message_system_->publish(state_topic_, payload)){
+      std::cout << "franka_plugin: publish_state publish failed\n"<<std::endl;
+      return false;
+    }
+    return true;
+  }
+ catch (...) {
+  std::cout << "franka_plugin: publish_state exception\n"<<std::endl;
+  return false;
+}
 }
 
 void FrankaPlugin::stop() {

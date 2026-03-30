@@ -1,8 +1,16 @@
 roboLab_2_ros_topics:
   - zenoh_msg: "franka/state"
     zenoh_type: "JointState"
-    ros_msg: "franka/joint_states"
+    ros_msg: "franka_4/joint_state"
     ros_type: "sensor_msgs/JointState"
+    joint_name: [   "panda_joint1", 
+                    "panda_joint2", 
+                    "panda_joint3",
+                    "panda_joint4", 
+                    "panda_joint5", 
+                    "panda_joint6", 
+                    "panda_joint7", 
+                    "panda_finger_joint1" ]
   
   - zenoh_msg: "kinec2/rgb"
     zenoh_type: "Image"

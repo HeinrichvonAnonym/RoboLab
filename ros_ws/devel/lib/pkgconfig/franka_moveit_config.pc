@@ -1,0 +1,8 @@
+prefix=/home/heinrich/roboLab/ros_ws/devel
+
+Name: franka_moveit_config
+Description: Description of franka_moveit_config
+Version: 0.3.0
+Cflags: 
+Libs: -L${prefix}/lib 
+Requires: 

@@ -33,6 +33,7 @@ class RosBridgePlugin : public Plugin {
     std::string zenoh_type;
     std::string ros_msg;
     std::string ros_type;
+    std::vector<std::string> joint_names;
   };
 
   bool load_config(const std::string& config_path);

@@ -15,7 +15,10 @@
 namespace robo_lab {
 namespace {
 
-bool publish_zenoh_to_ros(const std::string& ros_type, const std::string& payload, const ros::Publisher& pub) {
+bool publish_zenoh_to_ros(const std::string& ros_type,
+                          const std::vector<std::string>& joint_names,
+                          const std::string& payload,
+                          const ros::Publisher& pub) {
   if (ros_type == "sensor_msgs/JointState") {
     sensor_msgs::JointState out;
     out.header.stamp = ros::Time::now();
@@ -28,12 +31,25 @@ bool publish_zenoh_to_ros(const std::string& ros_type, const std::string& payloa
       out.velocity.resize(static_cast<size_t>(n));
       out.effort.resize(static_cast<size_t>(n));
       for (int i = 0; i < n; ++i) {
-        out.name[static_cast<size_t>(i)] = "joint_" + std::to_string(i + 1);
+        if (i < static_cast<int>(joint_names.size())) {
+          out.name[static_cast<size_t>(i)] = joint_names[static_cast<size_t>(i)];
+        } else {
+          out.name[static_cast<size_t>(i)] = "panda_joint" + std::to_string(i + 1);
+        }
         out.position[static_cast<size_t>(i)] = obs.joints(i).position();
         out.velocity[static_cast<size_t>(i)] = obs.joints(i).velocity();
         out.effort[static_cast<size_t>(i)] = obs.joints(i).effort();
       }
+      // If configured with extra joints (e.g. gripper), publish zeros for missing values.
+      for (size_t i = static_cast<size_t>(n); i < joint_names.size(); ++i) {
+        out.name.push_back(joint_names[i]);
+        out.position.push_back(0.0);
+        out.velocity.push_back(0.0);
+        out.effort.push_back(0.0);
+      }
       pub.publish(out);
+      //std::cout << "ros_bridge_plugin: converted franka/state RobotObservation -> sensor_msgs/JointState (n=" << n
+              //  << ")\n";
       return true;
     }
 
@@ -45,12 +61,24 @@ bool publish_zenoh_to_ros(const std::string& ros_type, const std::string& payloa
       out.velocity.resize(static_cast<size_t>(n));
       out.effort.resize(static_cast<size_t>(n));
       for (int i = 0; i < n; ++i) {
-        out.name[static_cast<size_t>(i)] = "joint_" + std::to_string(i + 1);
+        if (i < static_cast<int>(joint_names.size())) {
+          out.name[static_cast<size_t>(i)] = joint_names[static_cast<size_t>(i)];
+        } else {
+          out.name[static_cast<size_t>(i)] = "panda_joint" + std::to_string(i + 1);
+        }
         out.position[static_cast<size_t>(i)] = arr.states(i).position();
         out.velocity[static_cast<size_t>(i)] = arr.states(i).velocity();
         out.effort[static_cast<size_t>(i)] = arr.states(i).effort();
       }
+      for (size_t i = static_cast<size_t>(n); i < joint_names.size(); ++i) {
+        out.name.push_back(joint_names[i]);
+        out.position.push_back(0.0);
+        out.velocity.push_back(0.0);
+        out.effort.push_back(0.0);
+      }
       pub.publish(out);
+      std::cout << "ros_bridge_plugin: converted franka/state JointStateArray -> sensor_msgs/JointState (n=" << n
+                << ")\n";
       return true;
     }
     return false;
@@ -111,6 +139,14 @@ bool RosBridgePlugin::parse_topic_list(const YAML::Node& node, std::vector<Bridg
     }
     if (item["ros_type"]) {
       t.ros_type = item["ros_type"].as<std::string>();
+    }
+    if (item["joint_name"] && item["joint_name"].IsSequence()) {
+      for (const auto& name_node : item["joint_name"]) {
+        if (!name_node.IsScalar()) {
+          return false;
+        }
+        t.joint_names.push_back(name_node.as<std::string>());
+      }
     }
     out->push_back(std::move(t));
   }
@@ -184,7 +220,8 @@ bool RosBridgePlugin::initialize(const std::string& config_path) {
     const BridgeTopic bridge_cfg = bridge;
     message_system_->subscribe(
         bridge.zenoh_msg, [this, idx, bridge_cfg](const std::string& key, const std::string& payload) {
-          if (!publish_zenoh_to_ros(bridge_cfg.ros_type, payload, impl_->robo_to_ros_publishers[idx])) {
+          if (!publish_zenoh_to_ros(
+                  bridge_cfg.ros_type, bridge_cfg.joint_names, payload, impl_->robo_to_ros_publishers[idx])) {
             std::cerr << "ros_bridge_plugin: failed to decode Zenoh payload for key=" << key
                       << " as ros_type=" << bridge_cfg.ros_type << '\n';
           }
@@ -195,6 +232,7 @@ bool RosBridgePlugin::initialize(const std::string& config_path) {
   for (const auto& bridge : ros_to_robo_topics_) {
     ros::Subscriber sub;
     if (bridge.ros_type == "sensor_msgs/JointState") {
+      // std::cout << "ros_bridge_plugin: subscribing to " << bridge.ros_msg << std::endl;
       sub = impl_->nh->subscribe<sensor_msgs::JointState>(
           bridge.ros_msg, 10,
           [this, bridge](const sensor_msgs::JointState::ConstPtr& msg) {
