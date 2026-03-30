@@ -2,8 +2,9 @@ robot_ip: 172.16.0.40
 
 control_mode: "position"
 
-topic: "robot/command"
+cmd_topic: "franka/command"
+state_topic: "franka/state"
 
 dynamic:
-  kp: [100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0]
+  kp: [60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0]
   kd: [10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0]

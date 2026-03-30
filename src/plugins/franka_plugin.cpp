@@ -1,6 +1,8 @@
 #include "plugins/franka_plugin.h"
 
 #include <chrono>
+#include <array>
+#include <cmath>
 #include <functional>
 #include <iostream>
 #include <thread>
@@ -70,14 +72,21 @@ bool FrankaPlugin::initialize(const std::string& config_path) {
     robot_ip_ = root["robot_ip"].as<std::string>();
     robot_ = std::make_unique<franka::Robot>(robot_ip_);
 
-    if (root["topic"]) {
-      topic_ = root["topic"].as<std::string>();
+    if (root["cmd_topic"]) {
+      cmd_topic_ = root["cmd_topic"].as<std::string>();
     }
-    if (topic_.empty()) {
-      topic_ = "robot/command";
+    if (cmd_topic_.empty()) {
+      cmd_topic_ = "robot/command";
     }
+    if(root["state_topic"]) {
+      state_topic_ = root["state_topic"].as<std::string>();
+    }
+    if(state_topic_.empty()) {
+      state_topic_ = "robot/state";
+    }
+
     message_system_->subscribe(
-        topic_, std::bind(&FrankaPlugin::cmd_subscriber_callback, this, std::placeholders::_1, std::placeholders::_2));
+        cmd_topic_, std::bind(&FrankaPlugin::cmd_subscriber_callback, this, std::placeholders::_1, std::placeholders::_2));
 
     if (root["control_mode"]) {
       control_mode_ = root["control_mode"].as<std::string>();
@@ -89,7 +98,7 @@ bool FrankaPlugin::initialize(const std::string& config_path) {
     return false;
   }
 
-  std::cout << "franka_plugin: initialized (robot_ip=" << robot_ip_ << ", topic=" << topic_
+  std::cout << "franka_plugin: initialized (robot_ip=" << robot_ip_ << ", cmd_topic=" << cmd_topic_ << ", state_topic=" << state_topic_
             << ", control_mode=" << control_mode_;
   if (!kp_gains_.empty()) {
     std::cout << ", gains n=" << kp_gains_.size();
@@ -118,16 +127,47 @@ void FrankaPlugin::cmd_subscriber_callback(const std::string& key, const std::st
 void FrankaPlugin::run() {
   stop_ = false;
   std::cout << "franka_plugin: run loop started\n";
-  int tick = 0;
-  while (!stop_) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    ++tick;
-    if (tick % 10 == 0) {
-      // 
-      franka::RobotState robot_state = robot_->readOnce();
-     
-    }
+  if (!robot_) {
+    std::cerr << "franka_plugin: robot not initialized\n";
+    return;
   }
+
+  if (kp_gains_.size() != 7 || kd_gains_.size() != 7) {
+    std::cerr << "franka_plugin: control requires dynamic.kp and dynamic.kd with 7 values each\n";
+    return;
+  }
+
+  const franka::RobotState initial_state = robot_->readOnce();
+  std::array<double, 7> q_des = initial_state.q;
+  
+  constexpr double kTauLimit = 60.0;  // Conservative software saturation.
+
+  // Joint-space PD torque loop:
+  // tau = Kp * (q_des - q) + Kd * (dq_des - dq), with dq_des = 0.
+  robot_->control(
+      [&](const franka::RobotState& robot_state, franka::Duration /*duration*/) -> franka::Torques {
+        std::array<double, 7> tau_d{};
+        for (size_t i = 0; i < 7; ++i) {
+          const double pos_err = q_des[i] - robot_state.q[i];  
+          const double vel_err = -robot_state.dq[i];
+          double tau = kp_gains_[i] * pos_err + kd_gains_[i] * vel_err;
+          if (tau > kTauLimit) {
+            tau = kTauLimit;
+          } else if (tau < -kTauLimit) {
+            tau = -kTauLimit;
+          }
+          tau_d[i] = tau;
+        }
+
+        franka::Torques cmd(tau_d);
+        if (stop_) {
+          return franka::MotionFinished(cmd);
+        }
+        return cmd;
+      },
+      true,
+      1000.0);
+
   std::cout << "franka_plugin: run loop exited\n";
 }
 

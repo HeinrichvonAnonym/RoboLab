@@ -1,0 +1,12 @@
+roboLab_2_ros_topics
+  - zenoh_msg: "franka/state"
+    zenoh_type: "JointState"
+    ros_msg: "/joint_states"
+    ros_type: "sensor_msgs/JointState"
+  
+  - zenoh_msg: "kinec2/rgb"
+    zenoh_type: "Image"
+    ros_msg: "/kinect2/rgb/image_raw"
+    ros_type: "sensor_msgs/Image"
+
+ros_2_roboLab_topics:

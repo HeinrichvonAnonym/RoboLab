@@ -10,6 +10,8 @@
 #include <franka/robot.h>
 #include <franka/model.h>
 #include <franka/gripper.h>
+#include <Eigen/Dense>
+
 
 namespace robo_lab {
 
@@ -26,7 +28,8 @@ class FrankaPlugin : public Plugin {
  private:
   std::string config_path_;
   std::string robot_ip_;
-  std::string topic_;
+  std::string cmd_topic_;
+  std::string state_topic_;
   std::string control_mode_;
   std::vector<double> kp_gains_;
   std::vector<double> kd_gains_;

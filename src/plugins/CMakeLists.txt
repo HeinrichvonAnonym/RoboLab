@@ -3,9 +3,20 @@
 # Franka plugin
 add_library(franka_plugin MODULE franka_plugin.cpp)
 
-target_include_directories(franka_plugin PRIVATE "${CMAKE_SOURCE_DIR}/include")
+# Eigen
+find_package(Eigen3 REQUIRED)
 
-target_link_libraries(franka_plugin PRIVATE robo_lab robo_lab_proto yaml-cpp::yaml-cpp Franka::Franka)
+target_include_directories(franka_plugin PRIVATE 
+"${CMAKE_SOURCE_DIR}/include"
+"${EIGEN3_INCLUDE_DIRS}")
+
+target_link_libraries(franka_plugin PRIVATE 
+        robo_lab 
+        robo_lab_proto 
+        yaml-cpp::yaml-cpp 
+        Franka::Franka
+        Eigen3::Eigen
+        )
 
 # Plugin is dlopen'd; it must resolve MessageSystem etc. from the same librobo_lab.so as the executable.
 set_target_properties(
