@@ -15,3 +15,11 @@ checkpoints/trt/*.engine
 third_party/TensorRT/build/
 third_party/TensorRT-10.2.0.19/
 
+# Python bytecode (repo-wide)
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+

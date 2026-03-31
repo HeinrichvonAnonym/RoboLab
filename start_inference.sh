@@ -1,0 +1,1 @@
+./build/apps/robo_lab_main ./config/bringup_inference_demo.yaml

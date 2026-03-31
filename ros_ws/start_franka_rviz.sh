@@ -1,2 +1,0 @@
-source devel/setup.bash
-roslaunch franka_panda_moveit_config demo.launch

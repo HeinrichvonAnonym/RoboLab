@@ -16,5 +16,10 @@ roboLab_2_ros_topics:
     zenoh_type: "Image"
     ros_msg: "/kinect2/rgb/image_raw"
     ros_type: "sensor_msgs/Image"
+  
+  - zenoh_msg: "realsense/rgb"
+    zenoh_type: "Image"
+    ros_msg: "/realsense/rgb/image_raw"
+    ros_type: "sensor_msgs/Image"
 
 ros_2_roboLab_topics: []

@@ -1,0 +1,20 @@
+system_2: 
+  type: "BrainSeniorCare"
+  optinal_hz: 5
+  rgb_topic: "realsense/rgb"
+  detection_targets:
+    - "human"
+    - "person"
+    - "face"
+
+system_1: 
+  type: "CerebellumSeniorCare"
+  optinal_hz: 50
+
+system_0: 
+  type: "SpinalCordSeniorCare"
+  optinal_hz: 100
+
+zenoh:
+  mode: "peer"
+  # connect: ["tcp/localhost:7447"]
