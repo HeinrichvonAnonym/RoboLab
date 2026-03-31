@@ -12,9 +12,17 @@ plugins:
     config: config/plugins/kinect_plugin_config.yaml
     lib: ./build/plugins/libkinect_plugin.so
   
+  - name: realsense_plugin
+    config: config/plugins/realsense_plugin_config.yaml
+    lib: ./build/plugins/librealsense_plugin.so
+  
   - name: ros_bridge_plugin
     config: config/plugins/ros_bridge_plugin_config.yaml
     lib: ./build/plugins/libros_bridge_plugin.so
+  
+  - name: cartesian_control_plugin
+    config: config/plugins/cartesian_controller_plugin_config.yaml
+    lib: ./build/plugins/libcartesian_control_plugin.so
 
   # - name: realsense_plugin
   #   config: config/plugins/realsense_plugin_config.yaml

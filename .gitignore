@@ -25,4 +25,5 @@ __pycache__/
 
 ros_ws/build
 ros_ws/devel
+ros_ws/src/franka_description/meshes/
 

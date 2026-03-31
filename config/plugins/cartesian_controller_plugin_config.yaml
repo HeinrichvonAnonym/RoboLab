@@ -1,0 +1,3 @@
+control_mode: "position"
+
+control_config: "config/cartesian_control/cartesian_control_config.yaml"

@@ -114,14 +114,31 @@ void FrankaPlugin::cmd_subscriber_callback(const std::string& key, const std::st
               << ")\n";
     return;
   }
-  std::cout << "franka_plugin: RobotCommand key=" << key << " type=" << static_cast<int>(cmd.type())
-            << " seq=" << cmd.sequence() << " mode=" << cmd.mode() << " note=" << cmd.note()
-            << " joints=" << cmd.joints_size();
-  for (int i = 0; i < cmd.joints_size(); ++i) {
-    const auto& j = cmd.joints(i);
-    std::cout << " [" << i << "]: pos=" << j.position() << " vel=" << j.velocity() << " effort=" << j.effort();
+  
+  if (cmd.joints_size() != 7) {
+    std::cerr << "franka_plugin: expected 7 joints, got " << cmd.joints_size() << "\n";
+    return;
   }
-  std::cout << '\n';
+  
+  // Update target positions (thread-safe)
+  {
+    std::lock_guard<std::mutex> lock(target_mutex_);
+    for (int i = 0; i < 7; ++i) {
+      q_target_[i] = cmd.joints(i).position();
+    }
+    has_target_ = true;
+  }
+  
+  // Debug output
+  static int cmd_counter = 0;
+  if (cmd_counter++ % 50 == 0) {
+    std::cout << "[FrankaPlugin] CMD: [";
+    for (int i = 0; i < 7; ++i) {
+      std::cout << cmd.joints(i).position();
+      if (i < 6) std::cout << ", ";
+    }
+    std::cout << "]\n";
+  }
 }
 
 void FrankaPlugin::run() {
@@ -138,20 +155,43 @@ void FrankaPlugin::run() {
   }
   constexpr double kTauLimit = 60.0;  // Conservative software saturation.
 
-  // Joint-space PD torque loop:
-  // tau = Kp * (q_des - q) + Kd * (dq_des - dq), with dq_des = 0.
-  // now
   std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
 
   while(!stop_) {
   try{
     const franka::RobotState initial_state = robot_->readOnce();
+    
+    // Initialize q_des to current position, q_target to current if no target yet
     std::array<double, 7> q_des = initial_state.q;
+    {
+      std::lock_guard<std::mutex> lock(target_mutex_);
+      if (!has_target_) {
+        q_target_ = initial_state.q;
+      }
+    }
 
     robot_->control(
         [&](const franka::RobotState& robot_state, franka::Duration /*duration*/) -> franka::Torques {
+          // Get target from cartesian controller (thread-safe)
+          std::array<double, 7> q_cmd;
+          {
+            std::lock_guard<std::mutex> lock(target_mutex_);
+            q_cmd = q_target_;
+          }
+          
+          // Rate-limit q_des towards q_cmd for safety
+          for (size_t i = 0; i < 7; ++i) {
+            double delta = q_cmd[i] - q_des[i];
+            if (delta > kMaxJointStep) {
+              delta = kMaxJointStep;
+            } else if (delta < -kMaxJointStep) {
+              delta = -kMaxJointStep;
+            }
+            q_des[i] += delta;
+          }
+          
+          // PD control: tau = Kp * (q_des - q) + Kd * (0 - dq)
           std::array<double, 7> tau_d{};
-          // publish
           for (size_t i = 0; i < 7; ++i) {
             const double pos_err = q_des[i] - robot_state.q[i];  
             const double vel_err = -robot_state.dq[i];
@@ -163,11 +203,22 @@ void FrankaPlugin::run() {
             }
             tau_d[i] = tau;
           }
+          
+          // Debug: show position error direction periodically
+          static int ctrl_debug = 0;
+          if (ctrl_debug++ % 500 == 0) {
+            std::cout << "[FrankaPlugin] q_des[0]=" << q_des[0] 
+                      << " q=" << robot_state.q[0]
+                      << " err=" << (q_des[0] - robot_state.q[0])
+                      << " tau=" << tau_d[0] << "\n";
+          }
 
           franka::Torques cmd(tau_d);
           if (stop_) {
             return franka::MotionFinished(cmd);
           }
+          
+          // Publish state at ~50Hz
           std::chrono::steady_clock::time_point end_time = std::chrono::steady_clock::now();
           if(end_time - start_time > std::chrono::milliseconds(20)){
             start_time = end_time;
@@ -181,7 +232,6 @@ void FrankaPlugin::run() {
         true,
         1000.0);
       } catch (...) {
-        // std::cout << "franka_plugin: control loop exception\n"<<std::endl;
         const franka::RobotState robot_state = robot_->readOnce();
         std::chrono::steady_clock::time_point end_time = std::chrono::steady_clock::now();
         if(end_time - start_time > std::chrono::milliseconds(20)){
@@ -193,7 +243,6 @@ void FrankaPlugin::run() {
         }
       }
   }
-  
 
   std::cout << "franka_plugin: run loop exited\n";
   robot_->stop();

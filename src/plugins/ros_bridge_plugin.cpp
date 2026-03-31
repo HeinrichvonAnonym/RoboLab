@@ -9,6 +9,7 @@
 #include <ros/ros.h>
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/JointState.h>
+#include <geometry_msgs/PoseStamped.h>
 #include <std_msgs/ByteMultiArray.h>
 #include <yaml-cpp/yaml.h>
 
@@ -103,6 +104,25 @@ bool publish_zenoh_to_ros(const std::string& ros_type,
       out.encoding = "8UC" + std::to_string(img.channels());
     }
     out.data.assign(img.image().begin(), img.image().end());
+    pub.publish(out);
+    return true;
+  }
+
+  if (ros_type == "geometry_msgs/PoseStamped") {
+    franka::StampedPose pose_msg;
+    if (!pose_msg.ParseFromString(payload)) {
+      return false;
+    }
+    geometry_msgs::PoseStamped out;
+    out.header.stamp = ros::Time::now();
+    out.header.frame_id = "panda_link0";
+    out.pose.position.x = pose_msg.pose().pos().x();
+    out.pose.position.y = pose_msg.pose().pos().y();
+    out.pose.position.z = pose_msg.pose().pos().z();
+    out.pose.orientation.w = pose_msg.pose().rot().w();
+    out.pose.orientation.x = pose_msg.pose().rot().x();
+    out.pose.orientation.y = pose_msg.pose().rot().y();
+    out.pose.orientation.z = pose_msg.pose().rot().z();
     pub.publish(out);
     return true;
   }
@@ -209,6 +229,8 @@ bool RosBridgePlugin::initialize(const std::string& config_path) {
       pub = impl_->nh->advertise<sensor_msgs::JointState>(bridge.ros_msg, 10);
     } else if (bridge.ros_type == "sensor_msgs/Image") {
       pub = impl_->nh->advertise<sensor_msgs::Image>(bridge.ros_msg, 10);
+    } else if (bridge.ros_type == "geometry_msgs/PoseStamped") {
+      pub = impl_->nh->advertise<geometry_msgs::PoseStamped>(bridge.ros_msg, 10);
     } else {
       pub = impl_->nh->advertise<std_msgs::ByteMultiArray>(bridge.ros_msg, 10);
       std::cout << "ros_bridge_plugin: unsupported ros_type '" << bridge.ros_type
@@ -271,6 +293,25 @@ bool RosBridgePlugin::initialize(const std::string& config_path) {
               out.set_channels(0);
             }
             out.set_type(0);
+            std::string payload;
+            if (!out.SerializeToString(&payload)) {
+              return;
+            }
+            message_system_->publish(bridge.zenoh_msg, payload);
+          });
+    } else if (bridge.ros_type == "geometry_msgs/PoseStamped") {
+      sub = impl_->nh->subscribe<geometry_msgs::PoseStamped>(
+          bridge.ros_msg, 10,
+          [this, bridge](const geometry_msgs::PoseStamped::ConstPtr& msg) {
+            franka::StampedPose out;
+            out.mutable_pose()->mutable_pos()->set_x(msg->pose.position.x);
+            out.mutable_pose()->mutable_pos()->set_y(msg->pose.position.y);
+            out.mutable_pose()->mutable_pos()->set_z(msg->pose.position.z);
+            out.mutable_pose()->mutable_rot()->set_w(msg->pose.orientation.w);
+            out.mutable_pose()->mutable_rot()->set_x(msg->pose.orientation.x);
+            out.mutable_pose()->mutable_rot()->set_y(msg->pose.orientation.y);
+            out.mutable_pose()->mutable_rot()->set_z(msg->pose.orientation.z);
+            out.set_sys_time(msg->header.stamp.toSec());
             std::string payload;
             if (!out.SerializeToString(&payload)) {
               return;

@@ -38,4 +38,5 @@ if(NOT yaml-cpp_FOUND)
 endif()
 
 add_subdirectory(inference)
+add_subdirectory(cartesian_control)
 add_subdirectory(plugins)

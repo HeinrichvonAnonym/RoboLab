@@ -1,0 +1,14 @@
+{
+    "python.autoComplete.extraPaths": [
+        "/home/heinrich/franka_ws/devel/lib/python3/dist-packages",
+        "/home/heinrich/kinova/devel/lib/python3/dist-packages",
+        "/home/heinrich/realsence_ws/devel/lib/python3/dist-packages",
+        "/opt/ros/noetic/lib/python3/dist-packages"
+    ],
+    "python.analysis.extraPaths": [
+        "/home/heinrich/franka_ws/devel/lib/python3/dist-packages",
+        "/home/heinrich/kinova/devel/lib/python3/dist-packages",
+        "/home/heinrich/realsence_ws/devel/lib/python3/dist-packages",
+        "/opt/ros/noetic/lib/python3/dist-packages"
+    ]
+}

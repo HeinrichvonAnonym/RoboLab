@@ -357,7 +357,7 @@ void KinectPlugin::run() {
           const std::time_t t = std::chrono::system_clock::to_time_t(wall_now);
           const std::tm* lt = std::localtime(&t);
           if (lt) {
-            std::cout << "kinect_plugin: publishing frames at "
+            std::cout << "[kinect_plugin]: publishing frames at "
                     << std::setw(2) << std::setfill('0') << lt->tm_hour
                     << ":" << std::setw(2) << std::setfill('0') << lt->tm_min
                     << ":" << std::setw(2) << std::setfill('0') << lt->tm_sec

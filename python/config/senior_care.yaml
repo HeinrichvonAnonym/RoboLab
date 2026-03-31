@@ -1,11 +1,20 @@
 system_2: 
   type: "BrainSeniorCare"
-  optinal_hz: 5
-  rgb_topic: "realsense/rgb"
+  optinal_hz: 1
+  rgb_topic: [ "realsense/rgb", "kinect2/rgb" ]
   detection_targets:
     - "human"
     - "person"
     - "face"
+  use_predefined_targets: true
+  predefined_targets:
+    - x: 0.5
+      y: 0.0
+      z: 0.3
+      qw: 1.0
+      qx: 0.0
+      qy: 0.0
+      qz: 0.0
 
 system_1: 
   type: "CerebellumSeniorCare"

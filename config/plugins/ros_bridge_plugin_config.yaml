@@ -21,5 +21,17 @@ roboLab_2_ros_topics:
     zenoh_type: "Image"
     ros_msg: "/realsense/rgb/image_raw"
     ros_type: "sensor_msgs/Image"
+  
+  - zenoh_msg: "franka/target_pose"
+    zenoh_type: "StampedPose"
+    ros_msg: "/franka/target_pose"
+    ros_type: "geometry_msgs/PoseStamped"
+    frame: "panda_link0"
+
+  - zenoh_msg: "franka/pose"
+    zenoh_type: "StampedPose"
+    ros_msg: "/franka/pose"
+    ros_type: "geometry_msgs/PoseStamped"
+    frame: "panda_link0"
 
 ros_2_roboLab_topics: []

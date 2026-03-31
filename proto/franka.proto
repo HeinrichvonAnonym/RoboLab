@@ -18,6 +18,24 @@ message JointStateArray {
   repeated JointState states = 1;
 }
 
+message Point{
+  double x = 1;
+  double y = 2;
+  double z = 3;
+}
+
+message Quatenion{
+  double w = 1;
+  double x = 2;
+  double y = 3;
+  double z = 4;
+}
+
+message Pose {
+  Point pos = 1;
+  Quatenion rot = 2;
+}
+
 /// Wire format for Zenoh topic payloads (e.g. robot/command).
 message RobotCommand {
   enum Type {
@@ -45,4 +63,9 @@ message RobotObservation{
   string note = 4;
   repeated JointCommand joints = 5;
   float sys_time = 6;
+}
+
+message StampedPose{
+  Pose pose = 1;
+  float sys_time = 2;
 }

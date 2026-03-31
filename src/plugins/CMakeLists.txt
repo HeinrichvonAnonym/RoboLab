@@ -100,11 +100,39 @@ set_target_properties(
 
 target_compile_features(demo_inference_plugin PRIVATE cxx_std_17)
 
+# Cartesian control plugin
+add_library(cartesian_control_plugin MODULE cartesian_control_plugin.cpp)
+
+target_include_directories(
+  cartesian_control_plugin
+  PRIVATE "${CMAKE_SOURCE_DIR}/include"
+          "${EIGEN3_INCLUDE_DIRS}"
+)
+
+target_link_libraries(
+  cartesian_control_plugin
+  PRIVATE robo_lab
+          robo_lab_proto
+          robo_lab_cartesian_control
+          yaml-cpp::yaml-cpp
+          Eigen3::Eigen
+)
+
+set_target_properties(
+  cartesian_control_plugin
+  PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
+             OUTPUT_NAME "cartesian_control_plugin"
+             POSITION_INDEPENDENT_CODE ON
+             BUILD_RPATH "${CMAKE_BINARY_DIR}/src"
+)
+
+target_compile_features(cartesian_control_plugin PRIVATE cxx_std_17)
+
 # ROS <-> Zenoh raw-byte bridge plugin (optional).
 option(ROBOLAB_BUILD_ROS_BRIDGE "Build ros_bridge_plugin (requires ROS1/catkin)" ON)
 if(ROBOLAB_BUILD_ROS_BRIDGE)
   set(PYTHON_EXECUTABLE /usr/bin/python3)
-  find_package(catkin REQUIRED COMPONENTS roscpp std_msgs)
+  find_package(catkin REQUIRED COMPONENTS roscpp std_msgs sensor_msgs geometry_msgs)
   add_library(ros_bridge_plugin MODULE ros_bridge_plugin.cpp)
   target_include_directories(
     ros_bridge_plugin

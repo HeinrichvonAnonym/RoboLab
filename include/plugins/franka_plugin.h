@@ -3,9 +3,11 @@
 #include "plugin_interface.h"
 #include "message_system.h"
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 #include <franka/robot.h>
@@ -16,7 +18,7 @@
 
 namespace robo_lab {
 
-/// Minimal sample plugin: reads a few keys from its YAML and runs until stop().
+/// Franka robot plugin: receives joint commands, executes PD control, publishes state.
 class FrankaPlugin : public Plugin {
  public:
   FrankaPlugin() = default;
@@ -46,5 +48,13 @@ class FrankaPlugin : public Plugin {
 
   bool publish_state(const franka::RobotState& robot_state);
   uint32_t state_sequence_{0};
+
+  // Thread-safe target joint positions (from cartesian controller commands)
+  mutable std::mutex target_mutex_;
+  std::array<double, 7> q_target_{};
+  std::atomic<bool> has_target_{false};
+  
+  // Safety limits for joint position change per step
+  static constexpr double kMaxJointStep = 0.01;  // rad per control cycle (~1ms)
 };
 }  // namespace robo_lab

@@ -1,0 +1,416 @@
+#include<speed_adaptive_control/apf_controller.h>
+#include<Eigen/Dense>
+#include <array>
+
+APF_Controller::APF_Controller(ros::NodeHandle nh)
+{ 
+    set_params();
+    human_sub = nh.subscribe("/hrc/human_skeleton", 10, &APF_Controller::human_callback, this);
+    // jacobian_sub = nh.subscribe("facc/jacobian", 10, &APF_Controller::jacobian_callback, this);
+    // jacobian_4_dof_sub = nh.subscribe("facc/jacobian_4_dof", 10, &APF_Controller::jacobian_4_dof_callback, this);
+    // jacobian_6_dof_sub = nh.subscribe("facc/jacobian_6_dof", 10, &APF_Controller::jacobian_6_dof_callback, this);
+    att_scale_sub = nh.subscribe("facc/att_scale", 10, &APF_Controller::att_sacle_callback, this);
+    // robot_pose_sub = nh.subscribe("/facc/robot_pose", 10, &APF_Controller::robot_pose_callback, this);
+    // command_pub = nh.advertise<std_msgs::Float32MultiArray>("/facc/pid_command", 10);
+    command_pub = nh.advertise<std_msgs::Float32MultiArray>("/desired_velocity", 10);
+    marker_pub = nh.advertise<visualization_msgs::MarkerArray>("/facc/rep_vec_arr", 10);
+}
+
+APF_Controller::~APF_Controller()
+{
+}
+
+void APF_Controller::set_params()
+{
+    smooth_att = 0.15;
+    att_base = 18000; 
+
+    human_safe_margin = 0.05;
+    human_influence_margin = 0.2;
+    human_k_rep = 12000;
+    k_lamda = 800;
+    inner_dis = 0.1;
+    pinv_damping = 0.05;
+
+    innertia = {0.33, 0.33, 0.33, 0.33, 0.33, 0.33, 0.33,};
+    prev_dq = {0., 0., 0., 0., 0., 0., 0.};
+    K_P = {0.8, 0.8, 0.8, 0.8, 1.2, 1.2, 1.2};
+    K_D = {0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.00};
+
+
+    base_link = "panda_link0";
+    end_effector = "panda_grip_site";
+    wrist = "panda_link6";
+    forearm = "panda_link4";
+
+    vis_rep.header.frame_id = base_link;
+    vis_rep.ns = "potential_rep";
+    vis_rep.id = 0;
+    vis_rep.type = vis_rep.ARROW;
+    vis_rep.action = vis_rep.ADD;
+    vis_rep.scale.x = 0.01;
+    vis_rep.scale.y = 0.01;
+    vis_rep.scale.z = 0.1;
+    vis_rep.color.r = 1.0;
+    vis_rep.color.g = 0.0;
+    vis_rep.color.b = 0.0;
+    vis_rep.color.a = 1.0;
+    vis_rep.pose.orientation.x = 0;
+    vis_rep.pose.orientation.y = 0;
+    vis_rep.pose.orientation.z = 0;
+    vis_rep.pose.orientation.w = 1;
+
+
+    vis_thr.header.frame_id = base_link;
+    vis_thr.ns = "threshold";
+    vis_thr.id = 1;
+    vis_thr.type = vis_thr.SPHERE;
+    vis_thr.action = vis_thr.ADD;
+    vis_thr.color.r = 0.3;
+    vis_thr.color.g = 0.3;
+    vis_thr.color.b = 0.3;
+    vis_thr.color.a = 0.3;
+    vis_thr.pose.orientation.x = 0;
+    vis_thr.pose.orientation.y = 0;
+    vis_thr.pose.orientation.z = 0;
+    vis_thr.pose.orientation.w = 1;
+    
+}
+
+void APF_Controller::human_callback(const visualization_msgs::MarkerArray::ConstPtr& msg)
+{
+    size_t n = msg->markers.size();
+    num_human_link = static_cast<int>(n);
+    for (int i = 0; i < num_human_link; i++)
+    {
+        human_poses[i][0] = msg->markers[i].pose.position.x;
+        human_poses[i][1] = msg->markers[i].pose.position.y;
+        human_poses[i][2] = msg->markers[i].pose.position.z;
+    } 
+
+    got_human_poses = true;
+}
+
+// void APF_Controller::jacobian_callback(const std_msgs::Float32MultiArray::ConstPtr& msg)
+// {
+//     Eigen::Map<const Eigen::Matrix<float,6,7,Eigen::RowMajor>> map(msg->data.data());
+//     jacobian = map.cast<double>();
+//     got_jacobian = true;
+// }
+
+// void APF_Controller::jacobian_6_dof_callback(const std_msgs::Float32MultiArray::ConstPtr& msg)
+// {
+//     // printf("6");
+//     Eigen::Map<const Eigen::Matrix<float,6,6,Eigen::RowMajor>> map(msg->data.data());
+//     jacobian_6_dof = map.cast<double>();
+//     got_jacobian_6_dof = true;
+// }
+
+// void APF_Controller::jacobian_4_dof_callback(const std_msgs::Float32MultiArray::ConstPtr& msg)
+// {
+//     Eigen::Map<const Eigen::Matrix<float,6,4,Eigen::RowMajor>> map(msg->data.data());
+//     jacobian_4_dof = map.cast<double>();
+//     got_jacobian_4_dof = true;
+// }
+
+// void APF_Controller::robot_pose_callback(const geometry_msgs::PoseArray::ConstPtr& msg)
+// {
+//     for (int i = 0; i < 3; i++)
+//     {
+//         robot_poses[i][0] = msg->poses[i].position.x;
+//         robot_poses[i][1] = msg->poses[i].position.y;
+//         robot_poses[i][2] = msg->poses[i].position.z;
+//     }
+//     got_robot_poses = true;
+// }
+
+void APF_Controller::att_sacle_callback(const std_msgs::Float32::ConstPtr& msg)
+{
+    att_scale = msg->data;
+}
+
+std::array<double, 7> APF_Controller::angle_normalize(std::array<double, 7> vec)
+{
+    for (int i = 0; i < 7; i++)
+    {
+        vec[i] = fmod(vec[i], 2 * M_PI);
+        if (vec[i] > M_PI)
+        {
+            vec[i] -= 2 * M_PI;
+        }
+        else if (vec[i] < -M_PI)
+        {
+            vec[i] += 2 * M_PI;
+        }
+    }
+    return vec;
+}
+
+std::array<double, 7> APF_Controller::cal_att_potential()
+{ 
+    std::array<double, 7> cur_pos_norm = angle_normalize(cur_pos);
+    std::array<double, 7> target_pos_norm = angle_normalize(target_pos);
+    std::array<double, 7> pos_dis;
+    for (int i = 0; i < 7; i++)
+    {
+        pos_dis[i] = target_pos_norm[i] - cur_pos_norm[i];
+    }
+    pos_dis = angle_normalize(pos_dis);
+
+    double euclidean_dis = sqrt(pow(pos_dis[0], 2) + 
+                        pow(pos_dis[1], 2) + 
+                        pow(pos_dis[2], 2) + 
+                        pow(pos_dis[3], 2) + 
+                        pow(pos_dis[4], 2) + 
+                        pow(pos_dis[5], 2) + 
+                        pow(pos_dis[6], 2));
+    double scale = (att_base * att_scale) / std::max(euclidean_dis, smooth_att);
+    att_norm = scale * euclidean_dis;
+    std::array<double, 7> att_potential;
+    for (int i = 0; i < 7; i++)
+    {
+        att_potential[i] = scale * pos_dis[i];
+    }
+    return att_potential;
+}
+
+std::array<double, 7> APF_Controller::cartesian_2_joint(std::array<double, 3> vec, int link_category)
+{
+    std::array<double, 7> joint_vec {0.0,0.0,0.0,0.0,0.0,0.0,0.0};
+
+    switch(link_category){
+        case 3: Jv_cached = jacobian->cast<double>(); break;       // 6x7
+        case 2: Jv_cached = jacobian_6_dof->cast<double>(); break; // 6x6
+        case 1: Jv_cached = jacobian_5_dof->cast<double>(); break; // 6x5
+        case 0: Jv_cached = jacobian_4_dof->cast<double>(); break; // 6x4
+        default: ROS_WARN("Invalid link category"); return joint_vec;
+    }
+
+    int n_rows = Jv_cached.rows();
+    int n_joints = Jv_cached.cols();
+
+    Eigen::MatrixXd I = Eigen::MatrixXd::Identity(n_rows, n_rows);
+
+    dx_full_cached.setZero(n_rows);
+    dx_full_cached.head(3) << vec[0], vec[1], vec[2];
+
+    JJt_cached.noalias() = Jv_cached * Jv_cached.transpose();
+    JJt_cached += I * pinv_damping * pinv_damping;
+
+    J_pinv_cached.noalias() = Jv_cached.transpose() * JJt_cached.ldlt().solve(I);
+
+    dq_c_cached.noalias() = J_pinv_cached * dx_full_cached;
+
+    for(int i=0;i<n_joints;i++){
+        joint_vec[i] = dq_c_cached[i];
+    }
+
+    return joint_vec;
+}
+
+void APF_Controller::osc_control(std::array<double, 7> vec, std::array<double, 7> cur_q)
+{ 
+    //printf("osc_control\n");
+    Jv_cached = jacobian->cast<double>();      // 6x7
+    //printf("Jv_cached\n");
+    int n_rows = Jv_cached.rows();
+    int n_joints = Jv_cached.cols();
+    //printf("%d, %d \n", n_rows, n_joints);
+
+    Eigen::MatrixXd I = Eigen::MatrixXd::Identity(n_rows, n_rows);
+    //printf("I\n");
+    dx_full_cached.setZero(n_rows);
+    //printf("dx_full_cached\n");
+    dx_full_cached.head(n_rows) <<  vec[0] * rl_k, 
+                                    vec[1] * rl_k, 
+                                    vec[2] * rl_k, 
+                                    vec[3] * rl_k, 
+                                    vec[4] * rl_k, 
+                                    vec[5] * rl_k;
+    //printf("dx_full_cached\n");
+
+    JJt_cached.noalias() = Jv_cached * Jv_cached.transpose();
+    JJt_cached += I * pinv_damping * pinv_damping;
+
+    J_pinv_cached.noalias() = Jv_cached.transpose() * JJt_cached.ldlt().solve(I);
+
+    dq_c_cached.noalias() = J_pinv_cached * dx_full_cached;
+
+    for(int i=0;i<n_joints;i++){
+        rl_joint[i] = dq_c_cached[i] + cur_q[i];
+    }
+}
+
+void APF_Controller::update_marker(std::array<double, 3> rep_vec,
+                        std::array<double, 3> inf_pos,
+                        double inner_dis,
+                        double influence_margin)
+{ 
+    geometry_msgs::Point start, end;
+    start.x = inf_pos[0];
+    start.y = inf_pos[1];
+    start.z = inf_pos[2];
+
+    end.x = inf_pos[0] + 0.0003 * max_rep_norm * rep_vec[0] / vec_distance;
+    end.y = inf_pos[1] + 0.0003 * max_rep_norm * rep_vec[1] / vec_distance;
+    end.z = inf_pos[2] + 0.0003 * max_rep_norm * rep_vec[2] / vec_distance;
+    vis_rep.points.clear();
+    vis_rep.points.push_back(start); vis_rep.points.push_back(end);
+    vis_thr.pose.position = start;
+
+    vis_thr.scale.x = inner_dis + influence_margin;
+    vis_thr.scale.y = inner_dis + influence_margin;
+    vis_thr.scale.z = inner_dis + influence_margin;
+
+    ros::Time now = ros::Time::now();
+    vis_rep.header.stamp = now;
+    vis_thr.header.stamp = now;
+    ma.markers.clear();
+    ma.markers.push_back(vis_rep);
+    ma.markers.push_back(vis_thr);
+
+    marker_pub.publish(ma);
+}
+
+std::array<double, 7> APF_Controller::cal_rep_potential()
+{
+    max_rep_norm = 0.0;
+    // query
+    for (int i = 0; i < 4; i++)
+    {
+        std::array<double, 3> robot_pos;
+        robot_pos[0] = robot_poses->poses[i+3].position.x;
+        robot_pos[1] = robot_poses->poses[i+3].position.y;
+        robot_pos[2] = robot_poses->poses[i+3].position.z;
+
+        if (i < 3){
+            link_pos[0] = (robot_pos[0] + 
+                                robot_poses->poses[i + 4].position.x)/2;
+            link_pos[1] = (robot_pos[1] + 
+                                robot_poses->poses[i + 4].position.y)/2;
+            link_pos[2] = (robot_pos[2] + 
+                                robot_poses->poses[i + 4].position.z)/2;
+        }
+
+        // human
+        for (int j = 0; j < num_human_link; j++)
+        {
+            human_pos = human_poses[j];
+            
+            for (int k = 0; k < 3; k++)
+            {
+                rep_vec_joint[k] = robot_pos[k] - human_pos[k];
+                if (i<3) rep_vec_link[k] = link_pos[k] - human_pos[k];
+            }
+            
+            dis_joint = sqrt(pow(rep_vec_joint[0], 2) + 
+                        pow(rep_vec_joint[1], 2) + 
+                        pow(rep_vec_joint[2], 2));
+            
+            if(i<3){
+                dis_link = sqrt(pow(rep_vec_link[0], 2) + 
+                            pow(rep_vec_link[1], 2) + 
+                            pow(rep_vec_link[2], 2));
+                if (dis_joint > dis_link * 0.8){
+                    dis = dis_link;
+                    rep_vec = rep_vec_link;
+                    robot_pos = link_pos;
+                }else{
+                    dis = dis_joint;
+                    rep_vec = rep_vec_joint;
+                }
+            }else{
+                dis = dis_joint;
+                rep_vec = rep_vec_joint;
+            }
+            
+            // if (j==0){
+            //     printf("dis of robot %d and human %d is %f >>> \n", i, j, dis);
+            //     printf("robot_pos: %f, %f, %f\n human_pos: %f, %f, %f\n",  robot_pos[0], robot_pos[1], robot_pos[2], 
+            //     human_pos[0], human_pos[1], human_pos[2]);
+            // }
+            dis = std::max(dis - inner_dis, inner_dis + human_safe_margin);
+            double rep_norm = std::max(human_influence_margin - dis, 0.0) / std::max((human_influence_margin - human_safe_margin), 0.01);
+            if (rep_norm > max_rep_norm)
+            {
+                max_rep_norm = rep_norm;
+                res_rep_vec = rep_vec;
+                vec_distance = dis;
+                inf_pos = robot_pos;
+                selected_robot_link = i;
+                selected_human_link = j;
+            }
+        }
+    }
+    if (max_rep_norm > 0)
+    {
+        rep_norm = max_rep_norm * human_k_rep / std::max(vec_distance, 0.01);
+        for (int i = 0; i < 3; i++)
+        {
+            res_rep_vec[i] = rep_norm * res_rep_vec[i];
+        }
+
+        //visualize the repulsion
+        // update_marker(res_rep_vec, inf_pos, inner_dis, human_influence_margin);
+ 
+        std::array<double, 7> rep_potential = cartesian_2_joint(res_rep_vec, selected_robot_link);
+        return rep_potential;
+    }else{
+        return std::array<double, 7> {0., 0., 0., 0., 0., 0., 0.};
+    }
+}
+
+std::array<double, 7> APF_Controller::cal_command(std::array<double, 7> potential)
+{
+    std::array<double, 7> command;
+    std::array<double, 7> dq;
+    std::array<double, 7> ddq;
+    for (int i = 0; i < 7; i++)
+    {
+        // potential[i] = potential[i] / innertia[i];
+        double damping = k_lamda * cur_vel[i];
+        potential[i] -= damping;
+        // command[i] = cur_pos[i] + dt * (cur_vel[i] + potential[i] * dt) / 2; 
+        dq[i] = dt * (cur_vel[i] + potential[i] * dt) / 2;    
+    }
+    dq = angle_normalize(dq);
+    for (int i = 0; i < 7; i++){
+        ddq[i] = dq[i] - prev_dq[i];
+        prev_dq[i] = dq[i];
+        command[i] = K_P[i] * dq[i] + K_D[i] * ddq[i];
+    }
+    return command;
+}
+
+std::array<double, 7> APF_Controller::get_vel(std::array<double, 7>& qr)
+{
+    target_pos = qr;
+    
+    att_potential = cal_att_potential();
+   
+
+    if(got_human_poses){
+        rep_potential = cal_rep_potential();
+    } else {
+        rep_potential.fill(0.0);
+        rep_norm = 0.;
+    }
+    for(int i=0;i<7;i++){
+        potential[i] = att_potential[i] + rep_potential[i];
+    }
+
+    if(got_cur_pos){
+        command = cal_command(potential);
+    } else {
+        command.fill(0.0);
+    }
+    return command;
+}
+
+void APF_Controller::publish_vel(std::array<double, 7>& qv)
+{ 
+    command_msg.data.clear();
+    command_msg.data.assign(qv.begin(), qv.end());
+    command_pub.publish(command_msg);
+}
+

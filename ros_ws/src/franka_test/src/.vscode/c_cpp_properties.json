@@ -1,0 +1,44 @@
+{
+  "configurations": [
+    {
+      "browse": {
+        "databaseFilename": "${default}",
+        "limitSymbolsToIncludedHeaders": false
+      },
+      "includePath": [
+        "/home/heinrich/franka_ws/devel/include/**",
+        "/home/heinrich/kinova/devel/include/**",
+        "/home/heinrich/realsence_ws/devel/include/**",
+        "/opt/ros/noetic/include/**",
+        "/home/heinrich/kinova/src/data_sampling/include/**",
+        "/home/heinrich/franka_ws/src/detectors/include/**",
+        "/home/heinrich/kinova/src/interfaces/environment_interface/include/**",
+        "/home/heinrich/fuzzy_ws/src/fuzzy_core/include/**",
+        "/home/heinrich/kinova/src/third_party/gazebo-pkgs/gazebo_grasp_plugin/include/**",
+        "/home/heinrich/kinova/src/third_party/gazebo-pkgs/gazebo_version_helpers/include/**",
+        "/home/heinrich/kinova/src/grasp_helper/include/**",
+        "/home/heinrich/franka_ws/src/hand_eye_calib/include/**",
+        "/home/heinrich/kinova/src/handcomage/include/**",
+        "/home/heinrich/franka_ws/src/human_interface/include/**",
+        "/home/heinrich/kinova/src/sensors/kinect/iai_kinect2/kinect2_bridge/include/**",
+        "/home/heinrich/kinova/src/sensors/kinect/iai_kinect2/kinect2_calibration/include/**",
+        "/home/heinrich/kinova/src/sensors/kinect/iai_kinect2/kinect2_registration/include/**",
+        "/home/heinrich/kinova/src/interfaces/kompi_interface/include/**",
+        "/home/heinrich/kinova/src/kortex_driver/include/**",
+        "/home/heinrich/kinova/src/kortex_speed_plan/include/**",
+        "/home/heinrich/kinova/src/launcher/include/**",
+        "/home/heinrich/kinova/src/sensors/realsense/realsense-ros/realsense2_camera/include/**",
+        "/home/heinrich/kinova/src/third_party/roboticsgroup_upatras_gazebo_plugins/include/**",
+        "/home/heinrich/franka_ws/src/speed_adaptive_control/include/**",
+        "/home/heinrich/franka_ws/src/state_machine/include/**",
+        "/usr/include/**"
+      ],
+      "name": "ROS",
+      "intelliSenseMode": "gcc-x64",
+      "compilerPath": "/usr/bin/gcc",
+      "cStandard": "gnu11",
+      "cppStandard": "c++14"
+    }
+  ],
+  "version": 4
+}
