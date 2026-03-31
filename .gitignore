@@ -23,3 +23,6 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 
+ros_ws/build
+ros_ws/devel
+
