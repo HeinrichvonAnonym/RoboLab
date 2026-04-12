@@ -344,16 +344,20 @@ void RosBridgePlugin::run() {
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
   }
   std::cout << "ros_bridge_plugin: run loop exited\n";
-}
-
-void RosBridgePlugin::stop() {
-  stop_ = true;
+  // Spinner and Zenoh teardown run here so no thread publishes after close().
   if (impl_ && impl_->spinner) {
     impl_->spinner->stop();
   }
   if (message_system_) {
     message_system_->close();
   }
+}
+
+void RosBridgePlugin::stop() {
+  if (stop_.exchange(true)) {
+    return;
+  }
+  std::cout << "ros_bridge_plugin: stopping\n";
 }
 
 }  // namespace robo_lab

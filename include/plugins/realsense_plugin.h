@@ -36,6 +36,7 @@ class RealsensePlugin : public Plugin {
 
   std::atomic<bool> stop_{false};
   std::atomic<bool> running_{false};
+  std::atomic<bool> pipeline_started_{false};
 
   std::unique_ptr<MessageSystem> message_system_;
 

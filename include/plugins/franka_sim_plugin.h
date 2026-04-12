@@ -14,6 +14,7 @@
 #include <franka/model.h>
 #include <franka/gripper.h>
 #include <Eigen/Dense>
+#include <franka.pb.h>
 
 
 namespace robo_lab {
@@ -28,13 +29,7 @@ class FrankaPlugin : public Plugin {
   void run() override;
   void stop() override;
 
-  /// Velocity-based go-home: moves joints toward arm_home_ at go_home_vel_q_ rad/s.
-  /// Returns true when all joints reach home position (within threshold).
-  bool go_home_cmd(const franka::RobotState& robot_state, std::array<double, 7>& q_cmd);
-
  private:
-  bool control_is_activated_{false};
-  bool skip_go_home_{false};
   std::string config_path_;
   std::string robot_ip_;
   std::string cmd_topic_;
@@ -43,17 +38,15 @@ class FrankaPlugin : public Plugin {
   std::vector<double> kp_gains_;
   std::vector<double> kd_gains_;
   std::atomic<bool> stop_{false};
-  std::array<double, 7> arm_home_;
 
   std::unique_ptr<MessageSystem> message_system_;
 
   void cmd_subscriber_callback(const std::string& key, const std::string& payload);
 
-  std::unique_ptr<franka::Robot> robot_;
-  std::unique_ptr<franka::Model> model_;
-  std::unique_ptr<franka::Gripper> gripper_;
-
-  bool publish_state(const franka::RobotState& robot_state);
+  // std::unique_ptr<franka::Robot> robot_;
+  // std::unique_ptr<franka::Model> model_;
+  // std::unique_ptr<franka::Gripper> gripper_; 
+  bool publish_state();
   uint32_t state_sequence_{0};
 
   // Thread-safe target joint positions (from cartesian controller commands)
@@ -62,6 +55,6 @@ class FrankaPlugin : public Plugin {
   std::atomic<bool> has_target_{false};
   
   // Safety limits for joint position change per step
-  static constexpr double kMaxJointStep = 0.0005;  // rad per control cycle (~1ms) = 0.5 rad/s
+  static constexpr double kMaxJointStep = 0.01;  // rad per control cycle (~1ms)
 };
 }  // namespace robo_lab

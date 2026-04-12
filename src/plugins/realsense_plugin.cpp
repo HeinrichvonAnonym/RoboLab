@@ -111,8 +111,13 @@ void RealsensePlugin::run() {
       std::cout << "realsense_plugin: OpenGL acceleration requested; using default librealsense backend\n";
     }
     pipeline_->start(cfg);
+    pipeline_started_ = true;
   } catch (const rs2::error& e) {
     std::cerr << "realsense_plugin: failed to start pipeline: " << e.what() << "\n";
+    // Cleanup on early-exit path (run() owns message_system lifecycle).
+    if (message_system_) {
+      message_system_->close();
+    }
     running_ = false;
     return;
   }
@@ -145,7 +150,6 @@ void RealsensePlugin::run() {
     last_pub = now;
 
     if (enable_rgb_) {
-        // std::cout << "realsense_plugin: publishing rgb frame\n";
       rs2::video_frame color = frames.get_color_frame();
       (void)publish_frame(color, rgb_topic_, static_cast<int32_t>(RS2_FORMAT_RGB8));
     }
@@ -159,7 +163,9 @@ void RealsensePlugin::run() {
     }
   }
 
-  {
+  // run() owns cleanup: stop pipeline then close Zenoh, so there is never
+  // a concurrent publish() + close() race from the stop() caller thread.
+  if (pipeline_started_.exchange(false)) {
     std::lock_guard<std::mutex> lk(pipeline_mutex_);
     if (pipeline_) {
       try {
@@ -167,26 +173,20 @@ void RealsensePlugin::run() {
       } catch (...) {
       }
     }
+  }
+
+  if (message_system_) {
+    message_system_->close();
   }
 
   running_ = false;
 }
 
 void RealsensePlugin::stop() {
+  if (stop_.exchange(true)) {
+    return;
+  }
   std::cout << "realsense_plugin: stopping\n";
-  stop_ = true;
-  {
-    std::lock_guard<std::mutex> lk(pipeline_mutex_);
-    if (pipeline_) {
-      try {
-        pipeline_->stop();
-      } catch (...) {
-      }
-    }
-  }
-  if (message_system_) {
-    message_system_->close();
-  }
 }
 
 }  // namespace robo_lab

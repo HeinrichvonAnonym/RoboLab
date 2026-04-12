@@ -190,11 +190,14 @@ struct Framework::Loaded {
 Framework::Framework() = default;
 
 Framework::~Framework() {
+  // Signal all plugins to stop (idempotent — second call is a no-op thanks to
+  // the atomic exchange inside each plugin's stop()).
   for (auto& L : loaded_) {
     if (L->plugin) {
       L->plugin->stop();
     }
   }
+  // Wait for every worker to return from run() (which does all cleanup).
   for (auto& L : loaded_) {
     if (L->worker.joinable()) {
       L->worker.join();
@@ -314,19 +317,21 @@ void Framework::run_until_signal() {
   stop_requested_ = true;
   std::cout << "framework: shutdown signal received, stopping plugins...\n";
 
-  // sleep for 1 s
-  std::this_thread::sleep_for(std::chrono::seconds(1));
-
+  // Phase 1: signal ALL plugins to stop before waiting on any of them.
+  // This ensures no plugin is still actively publishing while another is
+  // tearing down its Zenoh session, avoiding cross-plugin race conditions.
   for (auto& L : loaded_) {
     if (L->plugin) {
       L->plugin->stop();
     }
   }
+  // Phase 2: wait for every run() to finish cleanup and return.
   for (auto& L : loaded_) {
     if (L->worker.joinable()) {
       L->worker.join();
     }
   }
+  std::cout << "framework: all plugins stopped\n";
 }
 
 }  // namespace robo_lab

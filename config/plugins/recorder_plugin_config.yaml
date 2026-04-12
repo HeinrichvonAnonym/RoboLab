@@ -1,0 +1,22 @@
+topic:
+  - franka/command
+  - franka/state
+  - kinec2/depth
+  - kinec2/rgb
+  - realsense/depth
+  - realsense/rgb
+
+# Map each topic to its protobuf message type for structured HDF5 storage.
+# The recorder parses protobuf and writes each field as a separate dataset.
+# Repeated fields (like joints) are stored as 2D arrays [n_messages, n_elements].
+topic_proto:
+  franka/command: franka.RobotCommand
+  franka/state: franka.RobotObservation
+  kinec2/depth: kinect.rgbImage
+  kinec2/rgb: kinect.rgbImage
+  realsense/depth: kinect.rgbImage
+  realsense/rgb: kinect.rgbImage
+
+record_frequency: 30
+# Flush interval in seconds (periodic save only; nothing is written on process stop).
+save_per_second: 5

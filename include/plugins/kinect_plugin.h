@@ -6,7 +6,6 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <vector>
 
@@ -55,8 +54,7 @@ class KinectPlugin : public Plugin {
 
   std::unique_ptr<Viewer> viewer_;
 
-  // Active libfreenect2 device pointer used for safe shutdown from `stop()`.
+  // Device pointer — owned exclusively by run(); never touched from stop().
   libfreenect2::Freenect2Device* dev_{nullptr};
-  std::mutex dev_mutex_;
 };
 }  // namespace robo_lab

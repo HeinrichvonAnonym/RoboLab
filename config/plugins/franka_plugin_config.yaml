@@ -5,6 +5,10 @@ control_mode: "position"
 cmd_topic: "franka/command"
 state_topic: "franka/state"
 
+arm_home: [-0.32, -0.9, 0.13, -2.75, 0.18, 1.95, 0.49]
+# Note: homing velocity is controlled by kMaxJointStep (0.0005 rad/cycle = 0.5 rad/s)
+skip_go_home: false  # Set true to accept commands immediately without homing
+
 dynamic:
   kp: [60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0]
   kd: [10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0]

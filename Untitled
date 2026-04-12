@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+"""
+System-level Comprehensive Evaluator with Risk-aware Assessment
+基于风险样本感知的系统综合评价
+"""
+
+import os
+import json
+import glob
+import argparse
+from datetime import datetime
+
+
+class SystemEvaluator:
+    def __init__(self, risk_ratio=0.1, risk_weight=0.3):
+        """
+        初始化系统评价器
+
+        Args:
+            risk_ratio: 风险样本占比参数 (0, 1]
+            risk_weight: 风险感知系数 [0, 1]
+        """
+        self.risk_ratio = max(0.001, min(1.0, risk_ratio))
+        self.risk_weight = max(0.0, min(1.0, risk_weight))
+        self.results_dir = "/home/heinrich/isaacgym/DT_HRCA_TEST/ros/src/hrca_metrics_evaluator/results"
+
+    def load_scene_results(self):
+        """加载所有场景结果文件"""
+        pattern = os.path.join(self.results_dir, "[0-9][0-9][0-9][0-9]_*_metrics_results.json")
+        result_files = glob.glob(pattern)
+
+        scores_data = []
+        for file_path in result_files:
+            filename = os.path.basename(file_path)
+            # 提取前4位测例ID
+            test_id = filename[:4]
+
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+
+                scores_data.append({
+                    'test_id': test_id,
+                    'test_case_name': data.get('test_case_name', filename.replace('_metrics_results.json', '.pkl')),
+                    'weighted_score': data['weighted_score']
+                })
+            except Exception as e:
+                print(f"Warning: Failed to load {filename}: {e}")
+
+        return scores_data
+
+    def evaluate_system(self, output_file):
+        """执行系统综合评价"""
+        print("="*60)
+        print("System-level Risk-aware Evaluation Started")
+        print("="*60)
+
+        # 加载所有场景数据
+        scores_data = self.load_scene_results()
+
+        if not scores_data:
+            print("No test results found!")
+            return
+
+        # 排序(由低到高)
+        scores_data.sort(key=lambda x: x['weighted_score'])
+
+        # 计算风险样本数量
+        total_samples = len(scores_data)
+        risk_sample_count = max(1, int(total_samples * self.risk_ratio))
+
+        # 获取低分风险样本集合
+        risk_samples = scores_data[:risk_sample_count]
+
+        # 计算尾部均值(低分样本平均)
+        tail_mean = sum(s['weighted_score'] for s in risk_samples) / risk_sample_count
+
+        # 计算总体均值
+        overall_mean = sum(s['weighted_score'] for s in scores_data) / total_samples
+
+        # 计算系统综合评价分数
+        system_score = (1 - self.risk_weight) * overall_mean + self.risk_weight * tail_mean
+
+        # 计算风险落差指标
+        risk_gap = overall_mean - tail_mean
+
+        # 构建评价报告
+        evaluation_report = {
+            'evaluation_info': {
+                'evaluation_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'results_directory': self.results_dir
+            },
+            'parameters': {
+                'risk_sample_ratio': self.risk_ratio,
+                'risk_awareness_weight': self.risk_weight
+            },
+            'statistics': {
+                'total_sample_count': total_samples,
+                'risk_sample_count': risk_sample_count,
+                'overall_mean_score': round(overall_mean, 4),
+                'tail_mean_score': round(tail_mean, 4),
+                'system_comprehensive_score': round(system_score, 4),
+                'risk_gap_index': round(risk_gap, 4)
+            },
+            'risk_samples': [
+                {
+                    'rank': idx + 1,
+                    'test_id': s['test_id'],
+                    'test_case_name': s['test_case_name'],
+                    'weighted_score': round(s['weighted_score'], 4)
+                }
+                for idx, s in enumerate(risk_samples)
+            ]
+        }
+
+        # 保存报告
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump(evaluation_report, f, indent=2, ensure_ascii=False)
+
+        # 打印摘要
+        print(f"\n场景样本总数: {total_samples}")
+        print(f"风险样本占比: {self.risk_ratio:.2%}")
+        print(f"风险感知系数: {self.risk_weight:.2f}")
+        print(f"低分场景样本数量: {risk_sample_count}")
+        print(f"\n总体均值: {overall_mean:.4f}")
+        print(f"尾部均值: {tail_mean:.4f}")
+        print(f"系统综合评价分数: {system_score:.4f}")
+        print(f"风险落差指标: {risk_gap:.4f}")
+
+        print(f"\n评价报告已保存: {output_file}")
+        print("="*60)
+        print("System Evaluation Completed!")
+        print("="*60)
+
+        return evaluation_report
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='System-level risk-aware comprehensive evaluation')
+    parser.add_argument('--output', default='system_evaluation_report.json', help='Output evaluation report file')
+    parser.add_argument('--risk-ratio', type=float, default=0.1, help='Risk sample ratio (0,1], default=0.1')
+    parser.add_argument('--risk-weight', type=float, default=0.3, help='Risk awareness weight [0,1], default=0.3')
+
+    args = parser.parse_args()
+
+    evaluator = SystemEvaluator(risk_ratio=args.risk_ratio, risk_weight=args.risk_weight)
+    evaluator.evaluate_system(args.output)

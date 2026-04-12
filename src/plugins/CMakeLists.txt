@@ -128,6 +128,35 @@ set_target_properties(
 
 target_compile_features(cartesian_control_plugin PRIVATE cxx_std_17)
 
+# Recorder plugin (Zenoh -> HDF5 on stop)
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+  pkg_check_modules(HDF5_IMPORT IMPORTED_TARGET hdf5)
+endif()
+add_library(recorder_plugin MODULE recorder_plugin.cpp)
+if(TARGET PkgConfig::HDF5_IMPORT)
+  target_link_libraries(recorder_plugin PRIVATE robo_lab robo_lab_proto yaml-cpp::yaml-cpp PkgConfig::HDF5_IMPORT)
+else()
+  find_package(HDF5 REQUIRED COMPONENTS C)
+  target_include_directories(recorder_plugin PRIVATE ${HDF5_INCLUDE_DIRS})
+  target_link_libraries(recorder_plugin PRIVATE robo_lab robo_lab_proto yaml-cpp::yaml-cpp ${HDF5_LIBRARIES})
+endif()
+
+target_include_directories(recorder_plugin PRIVATE "${CMAKE_SOURCE_DIR}/include")
+target_compile_definitions(
+  recorder_plugin
+  PRIVATE "ROBOLAB_RECORDER_DEFAULT_DATA_DIR=\"${CMAKE_SOURCE_DIR}/data\""
+)
+
+set_target_properties(
+  recorder_plugin
+  PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
+             OUTPUT_NAME "recorder_plugin"
+             POSITION_INDEPENDENT_CODE ON
+             BUILD_RPATH "${CMAKE_BINARY_DIR}/src")
+
+target_compile_features(recorder_plugin PRIVATE cxx_std_17)
+
 # ROS <-> Zenoh raw-byte bridge plugin (optional).
 option(ROBOLAB_BUILD_ROS_BRIDGE "Build ros_bridge_plugin (requires ROS1/catkin)" ON)
 if(ROBOLAB_BUILD_ROS_BRIDGE)

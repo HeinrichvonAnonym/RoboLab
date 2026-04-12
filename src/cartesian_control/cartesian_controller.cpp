@@ -108,7 +108,7 @@ std::vector<double> CartesianController::solve_ik_damped_least_squares(
     Eigen::Matrix<double, 6, 1> error;
     error.head<3>() = pos_error;
     error.tail<3>() = ori_error;
-    // print here may help
+    
     // Get Jacobian
     Eigen::Matrix<double, 6, Eigen::Dynamic> J = jacobian_calc_.compute_jacobian(q_current);
     

@@ -213,10 +213,7 @@ void KinectPlugin::run() {
       std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
       continue;
     }
-    {
-      std::lock_guard<std::mutex> lk(dev_mutex_);
-      dev_ = dev;
-    }
+    dev_ = dev;
 
     libfreenect2::SyncMultiFrameListener listener(types);
     dev->setColorFrameListener(&listener);
@@ -233,10 +230,7 @@ void KinectPlugin::run() {
       std::cerr << "kinect_plugin: failed to start Kinect streams\n";
       dev->close();
       delete dev;
-      {
-        std::lock_guard<std::mutex> lk(dev_mutex_);
-        dev_ = nullptr;
-      }
+      dev_ = nullptr;
       reconnect_attempt++;
       const int backoff_ms = std::min(3000, 300 * reconnect_attempt);
       std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
@@ -406,14 +400,11 @@ void KinectPlugin::run() {
       }
     }
 
-    {
-      std::lock_guard<std::mutex> lk(dev_mutex_);
-      if (dev_) {
-        dev_->stop();
-        dev_->close();
-        delete dev_;
-        dev_ = nullptr;
-      }
+    if (dev_) {
+      dev_->stop();
+      dev_->close();
+      delete dev_;
+      dev_ = nullptr;
     }
 
     if (!stop_ && reconnect_requested) {
@@ -424,17 +415,16 @@ void KinectPlugin::run() {
   }
 
   running_ = false;
-  message_system_->close();
+  if (message_system_) {
+    message_system_->close();
+  }
 }
 
 void KinectPlugin::stop() {
-  std::cout << "kinect_plugin: stopping\n";
-  stop_ = true;
-  // Stop may be called from another thread; signal active device to unblock wait loop.
-  std::lock_guard<std::mutex> lk(dev_mutex_);
-  if (dev_) {
-    dev_->stop();
+  if (stop_.exchange(true)) {
+    return;
   }
+  std::cout << "kinect_plugin: stopping\n";
 }
 
 }

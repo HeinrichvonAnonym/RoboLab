@@ -92,6 +92,18 @@ bool FrankaPlugin::initialize(const std::string& config_path) {
       control_mode_ = root["control_mode"].as<std::string>();
     }
 
+    if (root["arm_home"]) {
+      for (int i = 0; i < 7; ++i) {
+        arm_home_[i] = root["arm_home"][i].as<double>();
+      }
+    } else {
+      arm_home_ = {-0.32, -0.9, 0.13, -2.75, 0.18, 1.95, 0.49};
+    }
+
+    if (root["skip_go_home"]) {
+      skip_go_home_ = root["skip_go_home"].as<bool>();
+    }
+
     
   } catch (const YAML::Exception& e) {
     std::cerr << "franka_plugin: YAML error in " << config_path << ": " << e.what() << '\n';
@@ -141,40 +153,92 @@ void FrankaPlugin::cmd_subscriber_callback(const std::string& key, const std::st
   }
 }
 
+bool FrankaPlugin::go_home_cmd(const franka::RobotState& robot_state, std::array<double, 7>& q_cmd) {
+  // Command home position directly; rate limiter (kMaxJointStep) controls velocity.
+  // Returns true when all joints are within threshold of home (homing complete).
+  constexpr double kHomeThreshold = 0.05;  // rad (~1.1 deg)
+
+  bool all_at_home = true;
+  for (int i = 0; i < 7; ++i) {
+    const double error = arm_home_[i] - robot_state.q[i];
+    const double abs_error = std::abs(error);
+    
+    if (abs_error > kHomeThreshold) {
+      all_at_home = false;
+    }
+    
+    // Always command home position; rate limiter in control loop handles velocity
+    q_cmd[i] = arm_home_[i];
+  }
+
+  static int go_home_debug = 0;
+  if (go_home_debug++ % 500 == 0) {
+    std::cout << "[FrankaPlugin] go_home: ";
+    for (int i = 0; i < 7; ++i) {
+      std::cout << "j" << i << "=" << std::abs(arm_home_[i] - robot_state.q[i]) << " ";
+    }
+    std::cout << (all_at_home ? "COMPLETE" : "...") << "\n";
+  }
+
+  return all_at_home;
+}
+
 void FrankaPlugin::run() {
   stop_ = false;
   std::cout << "franka_plugin: run loop started\n";
   if (!robot_) {
     std::cerr << "franka_plugin: robot not initialized\n";
+    if (message_system_) {
+      message_system_->close();
+    }
     return;
   }
 
   if (kp_gains_.size() != 7 || kd_gains_.size() != 7) {
     std::cerr << "franka_plugin: control requires dynamic.kp and dynamic.kd with 7 values each\n";
+    if (message_system_) {
+      message_system_->close();
+    }
     return;
   }
   constexpr double kTauLimit = 60.0;  // Conservative software saturation.
 
   std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
 
+
   while(!stop_) {
   try{
     const franka::RobotState initial_state = robot_->readOnce();
     
-    // Initialize q_des to current position, q_target to current if no target yet
+    // Initialize q_des to current position, q_target to home if no external command yet
     std::array<double, 7> q_des = initial_state.q;
     {
       std::lock_guard<std::mutex> lock(target_mutex_);
       if (!has_target_) {
-        q_target_ = initial_state.q;
+        q_target_ = arm_home_;
       }
     }
 
+    // Skip go_home if configured
+    if (skip_go_home_ && !control_is_activated_) {
+      control_is_activated_ = true;
+      std::cout << "[FrankaPlugin] skip_go_home=true, control activated immediately\n";
+    }
+
+
     robot_->control(
         [&](const franka::RobotState& robot_state, franka::Duration /*duration*/) -> franka::Torques {
-          // Get target from cartesian controller (thread-safe)
+          // Get target command
           std::array<double, 7> q_cmd;
-          {
+          if (!control_is_activated_) {
+            // Go-home phase: move to arm_home_ using velocity-based control
+            if (go_home_cmd(robot_state, q_cmd)) {
+              // Homing complete, switch to normal command mode
+              control_is_activated_ = true;
+              std::cout << "[FrankaPlugin] go_home complete, control activated\n";
+            }
+          } else {
+            // Normal mode: follow external commands
             std::lock_guard<std::mutex> lock(target_mutex_);
             q_cmd = q_target_;
           }
@@ -206,7 +270,7 @@ void FrankaPlugin::run() {
           
           // Debug: show position error direction periodically
           static int ctrl_debug = 0;
-          if (ctrl_debug++ % 500 == 0) {
+          if (ctrl_debug++ % 1000 == 0) {
             std::cout << "[FrankaPlugin] q_des[0]=" << q_des[0] 
                       << " q=" << robot_state.q[0]
                       << " err=" << (q_des[0] - robot_state.q[0])
@@ -246,6 +310,10 @@ void FrankaPlugin::run() {
 
   std::cout << "franka_plugin: run loop exited\n";
   robot_->stop();
+  // Close Zenoh on the run thread so no concurrent publish_state() + close() race.
+  if (message_system_) {
+    message_system_->close();
+  }
 }
 
 bool FrankaPlugin::publish_state(const franka::RobotState& robot_state) {
@@ -283,8 +351,10 @@ bool FrankaPlugin::publish_state(const franka::RobotState& robot_state) {
 }
 
 void FrankaPlugin::stop() {
-  message_system_->close();
-  stop_ = true;
+  if (stop_.exchange(true)) {
+    return;
+  }
+  std::cout << "franka_plugin: stopping\n";
 }
 
 }  // namespace robo_lab
