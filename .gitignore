@@ -14,7 +14,10 @@ checkpoints/trt/*.engine
 
 third_party/TensorRT/build/
 third_party/TensorRT-10.2.0.19/
-
+third_party/Linux_Unreal_Engine_5
+third_party/UnrealEngine
+python/benchmark
+*.zip
 # Python bytecode (repo-wide)
 __pycache__/
 *.py[cod]

@@ -1,0 +1,4 @@
+plugins:
+  - name: recorder_plugin
+    config: config/plugins/recorder_plugin_config.yaml
+    lib: ./build/plugins/librecorder_plugin.so

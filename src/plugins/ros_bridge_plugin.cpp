@@ -9,6 +9,8 @@
 #include <ros/ros.h>
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/JointState.h>
+#include <geometry_msgs/Pose.h>
+#include <geometry_msgs/PoseArray.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <std_msgs/ByteMultiArray.h>
 #include <yaml-cpp/yaml.h>
@@ -18,8 +20,10 @@ namespace {
 
 bool publish_zenoh_to_ros(const std::string& ros_type,
                           const std::vector<std::string>& joint_names,
+                          const std::string& frame,
                           const std::string& payload,
                           const ros::Publisher& pub) {
+  const std::string frame_id = frame.empty() ? std::string("panda_link0") : frame;
   if (ros_type == "sensor_msgs/JointState") {
     sensor_msgs::JointState out;
     out.header.stamp = ros::Time::now();
@@ -115,7 +119,7 @@ bool publish_zenoh_to_ros(const std::string& ros_type,
     }
     geometry_msgs::PoseStamped out;
     out.header.stamp = ros::Time::now();
-    out.header.frame_id = "panda_link0";
+    out.header.frame_id = frame_id;
     out.pose.position.x = pose_msg.pose().pos().x();
     out.pose.position.y = pose_msg.pose().pos().y();
     out.pose.position.z = pose_msg.pose().pos().z();
@@ -123,6 +127,30 @@ bool publish_zenoh_to_ros(const std::string& ros_type,
     out.pose.orientation.x = pose_msg.pose().rot().x();
     out.pose.orientation.y = pose_msg.pose().rot().y();
     out.pose.orientation.z = pose_msg.pose().rot().z();
+    pub.publish(out);
+    return true;
+  }
+
+  if (ros_type == "geometry_msgs/PoseArray") {
+    franka::RobotLinkTransforms link_msg;
+    if (!link_msg.ParseFromString(payload)) {
+      return false;
+    }
+    geometry_msgs::PoseArray out;
+    out.header.stamp = ros::Time::now();
+    out.header.frame_id = frame_id;
+    out.poses.reserve(static_cast<size_t>(link_msg.transforms_size()));
+    for (const auto& sp : link_msg.transforms()) {
+      geometry_msgs::Pose p;
+      p.position.x = sp.pose().pos().x();
+      p.position.y = sp.pose().pos().y();
+      p.position.z = sp.pose().pos().z();
+      p.orientation.w = sp.pose().rot().w();
+      p.orientation.x = sp.pose().rot().x();
+      p.orientation.y = sp.pose().rot().y();
+      p.orientation.z = sp.pose().rot().z();
+      out.poses.push_back(p);
+    }
     pub.publish(out);
     return true;
   }
@@ -159,6 +187,9 @@ bool RosBridgePlugin::parse_topic_list(const YAML::Node& node, std::vector<Bridg
     }
     if (item["ros_type"]) {
       t.ros_type = item["ros_type"].as<std::string>();
+    }
+    if (item["frame"]) {
+      t.frame = item["frame"].as<std::string>();
     }
     if (item["joint_name"] && item["joint_name"].IsSequence()) {
       for (const auto& name_node : item["joint_name"]) {
@@ -231,6 +262,8 @@ bool RosBridgePlugin::initialize(const std::string& config_path) {
       pub = impl_->nh->advertise<sensor_msgs::Image>(bridge.ros_msg, 10);
     } else if (bridge.ros_type == "geometry_msgs/PoseStamped") {
       pub = impl_->nh->advertise<geometry_msgs::PoseStamped>(bridge.ros_msg, 10);
+    } else if (bridge.ros_type == "geometry_msgs/PoseArray") {
+      pub = impl_->nh->advertise<geometry_msgs::PoseArray>(bridge.ros_msg, 10);
     } else {
       pub = impl_->nh->advertise<std_msgs::ByteMultiArray>(bridge.ros_msg, 10);
       std::cout << "ros_bridge_plugin: unsupported ros_type '" << bridge.ros_type
@@ -243,7 +276,8 @@ bool RosBridgePlugin::initialize(const std::string& config_path) {
     message_system_->subscribe(
         bridge.zenoh_msg, [this, idx, bridge_cfg](const std::string& key, const std::string& payload) {
           if (!publish_zenoh_to_ros(
-                  bridge_cfg.ros_type, bridge_cfg.joint_names, payload, impl_->robo_to_ros_publishers[idx])) {
+                  bridge_cfg.ros_type, bridge_cfg.joint_names, bridge_cfg.frame, payload,
+                  impl_->robo_to_ros_publishers[idx])) {
             std::cerr << "ros_bridge_plugin: failed to decode Zenoh payload for key=" << key
                       << " as ros_type=" << bridge_cfg.ros_type << '\n';
           }

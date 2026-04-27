@@ -2,6 +2,7 @@
 
 #include "plugin_interface.h"
 
+#include "demo_inference.pb.h"
 #include "franka.pb.h"
 #include "kinect.pb.h"
 
@@ -404,6 +405,30 @@ void RecorderPlugin::write_hdf5(const std::string& h5_path,
       WriteDataset2D(group_id, "joints_position", cmd_pos_vec, topic_msgs.size(), 7);
       WriteDataset2D(group_id, "joints_velocity", cmd_vel_vec, topic_msgs.size(), 7);
       WriteDataset2D(group_id, "joints_effort", cmd_eff_vec, topic_msgs.size(), 7);
+
+    } else if (proto_name == "demo_inference.Observation") {
+      constexpr int kValuesCols = 19;
+      std::vector<double> values_vec;
+      values_vec.reserve(topic_msgs.size() * kValuesCols);
+
+      for (const auto& msg : topic_msgs) {
+        demo_inference::Observation obs;
+        if (!obs.ParseFromString(msg.payload)) {
+          for (int i = 0; i < kValuesCols; ++i) {
+            values_vec.push_back(0.0);
+          }
+          continue;
+        }
+        for (int i = 0; i < kValuesCols; ++i) {
+          if (i < obs.values_size()) {
+            values_vec.push_back(static_cast<double>(obs.values(i)));
+          } else {
+            values_vec.push_back(0.0);
+          }
+        }
+      }
+
+      WriteDataset2D(group_id, "values", values_vec, topic_msgs.size(), kValuesCols);
 
     } else if (proto_name == "kinect.rgbImage") {
       std::vector<int32_t> width_vec;

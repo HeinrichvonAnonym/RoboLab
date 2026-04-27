@@ -157,6 +157,28 @@ set_target_properties(
 
 target_compile_features(recorder_plugin PRIVATE cxx_std_17)
 
+# Franka trajectory replayer plugin (HDF5 -> Zenoh franka.RobotCommand).
+add_library(franka_replayer_plugin MODULE
+  franka_replayer_plugin.cpp
+  franka_replayer.cpp)
+if(TARGET PkgConfig::HDF5_IMPORT)
+  target_link_libraries(franka_replayer_plugin PRIVATE robo_lab robo_lab_proto yaml-cpp::yaml-cpp PkgConfig::HDF5_IMPORT)
+else()
+  if(NOT HDF5_FOUND)
+    find_package(HDF5 REQUIRED COMPONENTS C)
+  endif()
+  target_include_directories(franka_replayer_plugin PRIVATE ${HDF5_INCLUDE_DIRS})
+  target_link_libraries(franka_replayer_plugin PRIVATE robo_lab robo_lab_proto yaml-cpp::yaml-cpp ${HDF5_LIBRARIES})
+endif()
+target_include_directories(franka_replayer_plugin PRIVATE "${CMAKE_SOURCE_DIR}/include")
+set_target_properties(
+  franka_replayer_plugin
+  PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
+             OUTPUT_NAME "franka_replayer_plugin"
+             POSITION_INDEPENDENT_CODE ON
+             BUILD_RPATH "${CMAKE_BINARY_DIR}/src")
+target_compile_features(franka_replayer_plugin PRIVATE cxx_std_17)
+
 # ROS <-> Zenoh raw-byte bridge plugin (optional).
 option(ROBOLAB_BUILD_ROS_BRIDGE "Build ros_bridge_plugin (requires ROS1/catkin)" ON)
 if(ROBOLAB_BUILD_ROS_BRIDGE)

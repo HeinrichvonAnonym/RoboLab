@@ -1,0 +1,23 @@
+# Replays joint targets from a recording produced by recorder_plugin.
+# Reads /franka_state/joints_position and /franka_state/timestamps_ns.
+#
+# Replay is one-shot: after the last recorded frame the plugin publishes that
+# final frame once and exits. Looping is intentionally not supported because
+# the gap between the first and last poses may be large and would jump the
+# real robot.
+trajectory_file: "data/recording_20260428_003121_1777307481661.h5"
+
+# Zenoh topic to publish on (must match franka_plugin.cmd_topic).
+cmd_topic: "franka/command"
+control_mode: "position"
+
+# Streaming rate of the interpolated command (Hz). Higher rate -> finer signal
+# for the franka_plugin LP filter to consume.
+publish_hz: 200
+
+# 1.0 = realtime, 0.5 = half speed, 2.0 = 2x speed.
+rate_factor: 1.0
+
+# Wait this many seconds after run() starts before publishing the first
+# command. Gives franka_plugin time to finish go_home.
+startup_delay_s: 2.0

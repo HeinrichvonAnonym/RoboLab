@@ -104,14 +104,23 @@ bool FrankaPlugin::initialize(const std::string& config_path) {
       skip_go_home_ = root["skip_go_home"].as<bool>();
     }
 
-    
+    if (root["cmd_filter_alpha"]) {
+      cmd_filter_alpha_ = root["cmd_filter_alpha"].as<double>();
+      if (cmd_filter_alpha_ <= 0.0 || cmd_filter_alpha_ > 1.0) {
+        std::cerr << "franka_plugin: cmd_filter_alpha must be in (0, 1] (got "
+                  << cmd_filter_alpha_ << ")\n";
+        return false;
+      }
+    }
+
   } catch (const YAML::Exception& e) {
     std::cerr << "franka_plugin: YAML error in " << config_path << ": " << e.what() << '\n';
     return false;
   }
 
   std::cout << "franka_plugin: initialized (robot_ip=" << robot_ip_ << ", cmd_topic=" << cmd_topic_ << ", state_topic=" << state_topic_
-            << ", control_mode=" << control_mode_;
+            << ", control_mode=" << control_mode_
+            << ", cmd_filter_alpha=" << cmd_filter_alpha_;
   if (!kp_gains_.empty()) {
     std::cout << ", gains n=" << kp_gains_.size();
   }
@@ -218,6 +227,9 @@ void FrankaPlugin::run() {
         q_target_ = arm_home_;
       }
     }
+    // Prime the LP filter to the current robot pose so it doesn't ramp from 0.
+    q_target_filtered_ = initial_state.q;
+    cmd_filter_primed_ = true;
 
     // Skip go_home if configured
     if (skip_go_home_ && !control_is_activated_) {
@@ -237,12 +249,27 @@ void FrankaPlugin::run() {
               control_is_activated_ = true;
               std::cout << "[FrankaPlugin] go_home complete, control activated\n";
             }
+            // While homing, keep the filter snapped to the current robot pose
+            // so the first external command doesn't trigger a long ramp-up.
+            q_target_filtered_ = robot_state.q;
           } else {
             // Normal mode: follow external commands
-            std::lock_guard<std::mutex> lock(target_mutex_);
-            q_cmd = q_target_;
+            std::array<double, 7> q_target_snapshot;
+            {
+              std::lock_guard<std::mutex> lock(target_mutex_);
+              q_target_snapshot = q_target_;
+            }
+            // First-order IIR low-pass to absorb step jitter on q_target_ that
+            // arrives at coarse rates (recorded data, replayer, IK at 30 Hz).
+            // alpha=1.0 -> passthrough; smaller alpha smooths more.
+            const double a = cmd_filter_alpha_;
+            for (size_t i = 0; i < 7; ++i) {
+              q_target_filtered_[i] =
+                  a * q_target_snapshot[i] + (1.0 - a) * q_target_filtered_[i];
+            }
+            q_cmd = q_target_filtered_;
           }
-          
+
           // Rate-limit q_des towards q_cmd for safety
           for (size_t i = 0; i < 7; ++i) {
             double delta = q_cmd[i] - q_des[i];

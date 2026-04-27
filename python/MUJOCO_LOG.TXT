@@ -1,0 +1,6 @@
+Tue Apr 21 02:27:54 2026
+WARNING: Could not find decoder for resource '/home/heinrich/roboLab/python/benchmark/asset/scene/hospital_bed/model_2/collada/Sketchfab_2023_08_08_21_08_35.dae'
+
+Tue Apr 21 02:29:13 2026
+WARNING: Could not find decoder for resource '/home/heinrich/roboLab/python/benchmark/asset/scene/hospital_bed/model_2/collada/Sketchfab_2023_08_08_21_08_35.dae'
+

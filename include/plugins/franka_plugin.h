@@ -60,7 +60,14 @@ class FrankaPlugin : public Plugin {
   mutable std::mutex target_mutex_;
   std::array<double, 7> q_target_{};
   std::atomic<bool> has_target_{false};
-  
+
+  // First-order IIR low-pass on the incoming command stream. Updated each
+  // control cycle as: q_target_filtered = alpha * q_target + (1-alpha) *
+  // q_target_filtered. alpha=1.0 disables the filter (raw command is used).
+  double cmd_filter_alpha_{1.0};
+  std::array<double, 7> q_target_filtered_{};
+  bool cmd_filter_primed_{false};
+
   // Safety limits for joint position change per step
   static constexpr double kMaxJointStep = 0.0005;  // rad per control cycle (~1ms) = 0.5 rad/s
 };

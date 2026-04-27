@@ -13,6 +13,9 @@ struct DHParams {
     double alpha;         // Link twist
 };
 
+// Forward kinematics for a serial manipulator using Modified DH (Craig)
+// convention. Mirrors the tested ROS baseline in
+// ros_ws/src/speed_adaptive_control/src/jacobian_calculator.cpp.
 class JacobianCalculator {
 public:
     JacobianCalculator() = default;
@@ -22,21 +25,18 @@ public:
     void set_dh_params(const std::vector<std::array<double, 4>>& dh_raw);
     void set_franka_default_dh();
 
-    Eigen::Matrix4d forward_kinematics(const std::vector<double>& q) const;
-    Eigen::Matrix4d forward_kinematics(const std::vector<double>& q, size_t end_joint) const;
-    
-    Eigen::Matrix<double, 6, Eigen::Dynamic> compute_jacobian(const std::vector<double>& q) const;
-    
-    Eigen::Vector3d get_position(const std::vector<double>& q) const;
-    Eigen::Quaterniond get_orientation(const std::vector<double>& q) const;
-    Eigen::Matrix3d get_rotation_matrix(const std::vector<double>& q) const;
+    // Cumulative base->link_i transforms for every actuated joint.
+    // transforms[i] is the world pose of frame i AFTER applying joint i.
+    // Size == num_joints().
+    std::vector<Eigen::Matrix4d> compute_link_transforms(
+        const std::vector<double>& q) const;
 
     size_t num_joints() const { return num_joints_; }
 
 private:
-    // Modified DH transform (Craig convention) used by Franka
+    // Modified DH (Craig convention) single-joint transform.
     Eigen::Matrix4d dh_transform(const DHParams& dh, double q) const;
-    
+
     std::vector<DHParams> dh_params_;
     size_t num_joints_{7};
 };

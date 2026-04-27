@@ -29,9 +29,9 @@ roboLab_2_ros_topics:
     frame: "panda_link0"
 
   - zenoh_msg: "franka/pose"
-    zenoh_type: "StampedPose"
+    zenoh_type: "RobotLinkTransforms"
     ros_msg: "/franka/pose"
-    ros_type: "geometry_msgs/PoseStamped"
+    ros_type: "geometry_msgs/PoseArray"
     frame: "panda_link0"
 
 ros_2_roboLab_topics: []

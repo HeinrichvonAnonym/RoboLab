@@ -1,0 +1,3 @@
+[submodule "python/benchmark/asset/robot/URDF2FBX"]
+	path = python/benchmark/asset/robot/URDF2FBX
+	url = https://github.com/PiggyGaGa/URDF2FBX.git

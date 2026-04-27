@@ -69,3 +69,7 @@ message StampedPose{
   Pose pose = 1;
   float sys_time = 2;
 }
+
+message RobotLinkTransforms{
+  repeated StampedPose transforms = 1;
+}

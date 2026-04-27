@@ -1,6 +1,7 @@
 topic:
   - franka/command
   - franka/state
+  - HumanState
   - kinec2/depth
   - kinec2/rgb
   - realsense/depth
@@ -12,6 +13,7 @@ topic:
 topic_proto:
   franka/command: franka.RobotCommand
   franka/state: franka.RobotObservation
+  HumanState: demo_inference.Observation
   kinec2/depth: kinect.rgbImage
   kinec2/rgb: kinect.rgbImage
   realsense/depth: kinect.rgbImage
@@ -19,4 +21,4 @@ topic_proto:
 
 record_frequency: 30
 # Flush interval in seconds (periodic save only; nothing is written on process stop).
-save_per_second: 5
+save_per_second: 20

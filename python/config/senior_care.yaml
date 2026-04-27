@@ -7,6 +7,7 @@ system_2:
     - "person"
     - "face"
   use_predefined_targets: true
+  target_topic: "franka/target_pose"
   predefined_targets:
     - x: 0.5
       y: 0.0

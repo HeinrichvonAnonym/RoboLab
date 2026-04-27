@@ -33,6 +33,7 @@ class RosBridgePlugin : public Plugin {
     std::string zenoh_type;
     std::string ros_msg;
     std::string ros_type;
+    std::string frame;  // optional ROS header.frame_id for stamped/pose messages
     std::vector<std::string> joint_names;
   };
 

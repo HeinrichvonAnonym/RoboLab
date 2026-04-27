@@ -1,0 +1,24 @@
+# Replay bringup: run the real Franka plugin alongside the trajectory replayer.
+# The replayer publishes joint targets onto franka/command; the franka_plugin
+# subscribes there and runs its PD inner-loop with the configured LP filter.
+plugins:
+  - name: franka_plugin
+    config: config/plugins/franka_plugin_config.yaml
+    lib: ./build/plugins/libfranka_plugin.so
+
+  - name: franka_replayer_plugin
+    config: config/plugins/franka_replayer_plugin_config.yaml
+    lib: ./build/plugins/libfranka_replayer_plugin.so
+
+  # Uncomment to bridge state / commands / poses back to ROS for visualization.
+  - name: ros_bridge_plugin
+    config: config/plugins/ros_bridge_plugin_config.yaml
+    lib: ./build/plugins/libros_bridge_plugin.so
+
+  - name: recorder_plugin
+    config: config/plugins/recorder_plugin_config.yaml
+    lib: ./build/plugins/librecorder_plugin.so
+
+  # - name: cartesian_controller_plugin
+  #   config: config/plugins/cartesian_controller_plugin_config.yaml
+  #   lib: ./build/plugins/libcartesian_controller_plugin.so
