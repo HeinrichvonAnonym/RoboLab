@@ -1,0 +1,22 @@
+plugins:
+  - name: n100_imu_plugin
+    config: config/plugins/n100_imu_plugin_config.yaml
+    lib: ./build/plugins/libn100_imu_plugin.so
+  
+  - name: ros_bridge_plugin
+    config: config/plugins/ros_bridge_plugin_config.yaml
+    lib: ./build/plugins/libros_bridge_plugin.so
+  
+  - name: imu_teleop_plugin
+    config: config/plugins/imu_teleop_plugin_config.yaml
+    lib: ./build/plugins/libimu_teleop_plugin.so
+
+  - name: franka_plugin
+    config: config/plugins/franka_plugin_config.yaml
+    lib: ./build/plugins/libfranka_plugin.so
+  
+  - name: cartesian_control_plugin
+    config: config/plugins/cartesian_controller_plugin_config.yaml
+    lib: ./build/plugins/libcartesian_control_plugin.so
+  
+  

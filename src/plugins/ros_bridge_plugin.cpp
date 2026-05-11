@@ -5,9 +5,12 @@
 #include <thread>
 
 #include "franka.pb.h"
+#include "imu.pb.h"
 #include "kinect.pb.h"
 #include <ros/ros.h>
+#include <nav_msgs/Odometry.h>
 #include <sensor_msgs/Image.h>
+#include <sensor_msgs/Imu.h>
 #include <sensor_msgs/JointState.h>
 #include <geometry_msgs/Pose.h>
 #include <geometry_msgs/PoseArray.h>
@@ -155,6 +158,56 @@ bool publish_zenoh_to_ros(const std::string& ros_type,
     return true;
   }
 
+  if (ros_type == "sensor_msgs/Imu") {
+    imu::ImuStamped imu_msg;
+    if (!imu_msg.ParseFromString(payload)) {
+      return false;
+    }
+    sensor_msgs::Imu out;
+    out.header.stamp = ros::Time::now();
+    out.header.frame_id = frame.empty() ? std::string("imu_link") : frame;
+    if (imu_msg.has_ahrs()) {
+      out.orientation.w = imu_msg.ahrs().quaternion().w();
+      out.orientation.x = imu_msg.ahrs().quaternion().x();
+      out.orientation.y = imu_msg.ahrs().quaternion().y();
+      out.orientation.z = imu_msg.ahrs().quaternion().z();
+    }
+    if (imu_msg.has_imu()) {
+      out.angular_velocity.x = imu_msg.imu().gyroscope().x();
+      out.angular_velocity.y = imu_msg.imu().gyroscope().y();
+      out.angular_velocity.z = imu_msg.imu().gyroscope().z();
+      out.linear_acceleration.x = imu_msg.imu().acceleration().x();
+      out.linear_acceleration.y = imu_msg.imu().acceleration().y();
+      out.linear_acceleration.z = imu_msg.imu().acceleration().z();
+    }
+    pub.publish(out);
+    return true;
+  }
+
+  if (ros_type == "nav_msgs/Odometry") {
+    imu::ImuStamped imu_msg;
+    if (!imu_msg.ParseFromString(payload)) {
+      return false;
+    }
+    nav_msgs::Odometry out;
+    out.header.stamp = ros::Time::now();
+    out.header.frame_id = frame.empty() ? std::string("odom") : frame;
+    out.child_frame_id = "imu_link";
+    if (imu_msg.has_ahrs()) {
+      out.pose.pose.orientation.w = imu_msg.ahrs().quaternion().w();
+      out.pose.pose.orientation.x = imu_msg.ahrs().quaternion().x();
+      out.pose.pose.orientation.y = imu_msg.ahrs().quaternion().y();
+      out.pose.pose.orientation.z = imu_msg.ahrs().quaternion().z();
+    }
+    if (imu_msg.has_imu()) {
+      out.twist.twist.angular.x = imu_msg.imu().gyroscope().x();
+      out.twist.twist.angular.y = imu_msg.imu().gyroscope().y();
+      out.twist.twist.angular.z = imu_msg.imu().gyroscope().z();
+    }
+    pub.publish(out);
+    return true;
+  }
+
   std_msgs::ByteMultiArray raw;
   raw.data.assign(payload.begin(), payload.end());
   pub.publish(raw);
@@ -264,6 +317,10 @@ bool RosBridgePlugin::initialize(const std::string& config_path) {
       pub = impl_->nh->advertise<geometry_msgs::PoseStamped>(bridge.ros_msg, 10);
     } else if (bridge.ros_type == "geometry_msgs/PoseArray") {
       pub = impl_->nh->advertise<geometry_msgs::PoseArray>(bridge.ros_msg, 10);
+    } else if (bridge.ros_type == "sensor_msgs/Imu") {
+      pub = impl_->nh->advertise<sensor_msgs::Imu>(bridge.ros_msg, 10);
+    } else if (bridge.ros_type == "nav_msgs/Odometry") {
+      pub = impl_->nh->advertise<nav_msgs::Odometry>(bridge.ros_msg, 10);
     } else {
       pub = impl_->nh->advertise<std_msgs::ByteMultiArray>(bridge.ros_msg, 10);
       std::cout << "ros_bridge_plugin: unsupported ros_type '" << bridge.ros_type

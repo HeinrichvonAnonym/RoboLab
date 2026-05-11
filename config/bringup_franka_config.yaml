@@ -2,7 +2,11 @@
 #   ./build/apps/robo_lab_main
 #   ./build/apps/robo_lab_main /path/to/other_bringup.yaml
 #
-# With bringup under config/, lib/config paths like ./build/... resolve against repo root as well as CWD.
+# With bringup under config/, lib/config paths like ./build/... resolve against
+# repo root as well as CWD.
+#
+# NOTE: keyboard_plugin reads stdin in cbreak mode -- always launch this
+# bringup from an interactive terminal (no nohup / & backgrounding).
 plugins:
   - name: franka_plugin
     config: config/plugins/franka_plugin_config.yaml
@@ -11,18 +15,27 @@ plugins:
   # - name: kinect_plugin
   #   config: config/plugins/kinect_plugin_config.yaml
   #   lib: ./build/plugins/libkinect_plugin.so
-  
+
   # - name: realsense_plugin
   #   config: config/plugins/realsense_plugin_config.yaml
   #   lib: ./build/plugins/librealsense_plugin.so
-  
+
   - name: ros_bridge_plugin
     config: config/plugins/ros_bridge_plugin_config.yaml
     lib: ./build/plugins/libros_bridge_plugin.so
-  
+
+  # Teleop publisher: reads keys from stdin, publishes franka.CartesianDPoseCmd
+  # on `franka/cartesian_dpose` per press. Recorder picks it up below.
+  - name: keyboard_plugin
+    config: config/plugins/keyboard_plugin_config.yaml
+    lib: ./build/plugins/libkeyboard_plugin.so
+
+  # Cartesian controller: consumes dpose commands from keyboard_plugin,
+  # solves resolved-rate joint deltas via DLS pseudoinverse, and republishes
+  # joint targets on franka/command for franka_plugin to track.
   - name: cartesian_control_plugin
-   config: config/plugins/cartesian_controller_plugin_config.yaml
-   lib: ./build/plugins/libcartesian_control_plugin.so
+    config: config/plugins/cartesian_controller_plugin_config.yaml
+    lib: ./build/plugins/libcartesian_control_plugin.so
 
   - name: recorder_plugin
     config: config/plugins/recorder_plugin_config.yaml

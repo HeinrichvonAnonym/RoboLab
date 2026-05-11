@@ -34,4 +34,16 @@ roboLab_2_ros_topics:
     ros_type: "geometry_msgs/PoseArray"
     frame: "panda_link0"
 
+  - zenoh_msg: "imu/data"
+    zenoh_type: "ImuStamped"
+    ros_msg: "/imu/data"
+    ros_type: "sensor_msgs/Imu"
+    frame: "panda_link0"
+
+  - zenoh_msg: "imu/data"
+    zenoh_type: "ImuStamped"
+    ros_msg: "/imu/odom"
+    ros_type: "nav_msgs/Odometry"
+    frame: "panda_link0"
+
 ros_2_roboLab_topics: []

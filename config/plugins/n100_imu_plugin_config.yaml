@@ -1,0 +1,10 @@
+# Wheeltech N100 IMU plugin configuration.
+#
+# port:      Serial device path (check dmesg / ls /dev/ttyUSB* after plugging in).
+# baudrate:  Must match the N100 DIP-switch / firmware setting.
+#            Typical values: 9600, 115200, 460800, 921600.
+# imu_topic: Zenoh key expression for the published imu.ImuStamped messages.
+
+port: "/dev/ttyUSB0"
+baudrate: 921600
+imu_topic: "imu/data"

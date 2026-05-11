@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package imu;
+
+message Vec3f {
+  float x = 1;
+  float y = 2;
+  float z = 3;
+}
+
+message Quaternionf {
+  float w = 1;
+  float x = 2;
+  float y = 3;
+  float z = 4;
+}
+
+message EulerAngles {
+  float roll  = 1;
+  float pitch = 2;
+  float yaw   = 3;
+}
+
+// Raw sensor readings (accelerometer, gyroscope, magnetometer).
+message ImuData {
+  Vec3f acceleration = 1;   // m/s^2
+  Vec3f gyroscope    = 2;   // rad/s
+  Vec3f magnetometer = 3;   // μT
+  float pressure     = 4;   // Pa
+  float timestamp    = 5;   // device timestamp (s)
+}
+
+// Attitude and heading reference system output.
+message AhrsData {
+  EulerAngles euler       = 1;  // rad
+  Quaternionf quaternion  = 2;
+  float       timestamp   = 3;  // device timestamp (s)
+}
+
+// Full stamped IMU + AHRS bundle published per cycle.
+message ImuStamped {
+  ImuData  imu  = 1;
+  AhrsData ahrs = 2;
+  float sys_time = 3;  // host monotonic clock (s)
+}

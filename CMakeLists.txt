@@ -218,5 +218,20 @@ if(ROBOLAB_BUILD_LIBREALSENSE)
 endif()
 
 # add_subdirectory(third_party/ugv_sdk)
+
+# Wheeltech N100 IMU serial dependency — built standalone (upstream CMakeLists needs catkin).
+set(_robo_serial_src "${CMAKE_SOURCE_DIR}/third_party/serial")
+if(EXISTS "${_robo_serial_src}/src/serial.cc")
+  add_library(
+    robo_serial STATIC
+    "${_robo_serial_src}/src/serial.cc"
+    "${_robo_serial_src}/src/impl/unix.cc"
+    "${_robo_serial_src}/src/impl/list_ports/list_ports_linux.cc")
+  target_include_directories(robo_serial PUBLIC "${_robo_serial_src}/include")
+  target_link_libraries(robo_serial PUBLIC rt pthread)
+  set_target_properties(robo_serial PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  target_compile_features(robo_serial PRIVATE cxx_std_17)
+endif()
+
 add_subdirectory(src)
 add_subdirectory(apps)

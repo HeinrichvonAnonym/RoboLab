@@ -5,7 +5,7 @@
 # final frame once and exits. Looping is intentionally not supported because
 # the gap between the first and last poses may be large and would jump the
 # real robot.
-trajectory_file: "data/recording_20260428_003121_1777307481661.h5"
+trajectory_file: "data/recording_20260428_014112_1777311672016.h5"
 
 # Zenoh topic to publish on (must match franka_plugin.cmd_topic).
 cmd_topic: "franka/command"

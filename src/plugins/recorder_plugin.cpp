@@ -195,12 +195,23 @@ void RecorderPlugin::run() {
     }
   }
 
-  // No HDF5 write here: shutdown saves were a source of corrupt/partial files under concurrent Zenoh
-  // teardown. Data is only persisted on periodic save_interval (see save_per_second in YAML).
+  // Final flush: snapshot the buffer before clearing it, then write to disk
+  // *before* closing the Zenoh session. Subscribers see accepting_ == false
+  // and return early, so no new data races in during the snapshot.
+  // This avoids losing whatever was accumulated since the last periodic save
+  // (e.g. low-rate teleop commands during a short test session). The previous
+  // implementation cleared the buffer on stop(); switching to a guarded flush
+  // is safe because we still own message_system_ and the per-plugin run-loop
+  // hasn't been torn down yet by the framework.
+  std::deque<RecordedMessage> tail;
   {
     std::lock_guard<std::mutex> lk(buffer_mutex_);
     accepting_ = false;
-    buffer_.clear();
+    tail.swap(buffer_);
+  }
+  if (!tail.empty()) {
+    const std::string path = make_h5_path();
+    write_hdf5(path, tail);
   }
 
   if (message_system_) {
@@ -405,6 +416,38 @@ void RecorderPlugin::write_hdf5(const std::string& h5_path,
       WriteDataset2D(group_id, "joints_position", cmd_pos_vec, topic_msgs.size(), 7);
       WriteDataset2D(group_id, "joints_velocity", cmd_vel_vec, topic_msgs.size(), 7);
       WriteDataset2D(group_id, "joints_effort", cmd_eff_vec, topic_msgs.size(), 7);
+
+    } else if (proto_name == "franka.CartesianDPoseCmd") {
+      // Each cartesian delta-pose command stores six floats. We pack them
+      // into a single (N, 6) float dataset for compactness and easy slicing
+      // alongside the timestamps_ns array written above.
+      constexpr int kCols = 6;
+      std::vector<float> values_vec;
+      values_vec.reserve(topic_msgs.size() * kCols);
+
+      for (const auto& msg : topic_msgs) {
+        franka::CartesianDPoseCmd dpose;
+        if (!dpose.ParseFromString(msg.payload)) {
+          for (int i = 0; i < kCols; ++i) {
+            values_vec.push_back(0.0f);
+          }
+          continue;
+        }
+        values_vec.push_back(dpose.dx());
+        values_vec.push_back(dpose.dy());
+        values_vec.push_back(dpose.dz());
+        values_vec.push_back(dpose.droll());
+        values_vec.push_back(dpose.dpitch());
+        values_vec.push_back(dpose.dyaw());
+      }
+
+      const hsize_t dims[2] = {topic_msgs.size(), static_cast<hsize_t>(kCols)};
+      hid_t space = H5Screate_simple(2, dims, nullptr);
+      hid_t ds = H5Dcreate2(group_id, "values", H5T_NATIVE_FLOAT, space,
+                            H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+      H5Dwrite(ds, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, values_vec.data());
+      H5Dclose(ds);
+      H5Sclose(space);
 
     } else if (proto_name == "demo_inference.Observation") {
       constexpr int kValuesCols = 19;

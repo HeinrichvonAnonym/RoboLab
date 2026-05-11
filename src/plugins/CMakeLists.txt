@@ -179,11 +179,62 @@ set_target_properties(
              BUILD_RPATH "${CMAKE_BINARY_DIR}/src")
 target_compile_features(franka_replayer_plugin PRIVATE cxx_std_17)
 
+# Keyboard teleop publisher (CartesianDPoseCmd on each key press).
+add_library(keyboard_plugin MODULE keyboard_plugin.cpp)
+target_include_directories(keyboard_plugin PRIVATE "${CMAKE_SOURCE_DIR}/include")
+target_link_libraries(
+  keyboard_plugin
+  PRIVATE robo_lab
+          robo_lab_proto
+          yaml-cpp::yaml-cpp)
+set_target_properties(
+  keyboard_plugin
+  PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
+             OUTPUT_NAME "keyboard_plugin"
+             POSITION_INDEPENDENT_CODE ON
+             BUILD_RPATH "${CMAKE_BINARY_DIR}/src")
+target_compile_features(keyboard_plugin PRIVATE cxx_std_17)
+
+# IMU 6DOF teleop plugin (imu/data -> franka/cartesian_dpose).
+add_library(imu_teleop_plugin MODULE imu_teleop_plugin.cpp)
+target_include_directories(imu_teleop_plugin PRIVATE "${CMAKE_SOURCE_DIR}/include")
+target_link_libraries(
+  imu_teleop_plugin
+  PRIVATE robo_lab
+          robo_lab_proto
+          yaml-cpp::yaml-cpp)
+set_target_properties(
+  imu_teleop_plugin
+  PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
+             OUTPUT_NAME "imu_teleop_plugin"
+             POSITION_INDEPENDENT_CODE ON
+             BUILD_RPATH "${CMAKE_BINARY_DIR}/src")
+target_compile_features(imu_teleop_plugin PRIVATE cxx_std_17)
+
+# Wheeltech N100 IMU plugin (serial -> Zenoh imu.ImuStamped).
+if(TARGET robo_serial)
+  add_library(n100_imu_plugin MODULE n100_imu_plugin.cpp)
+  target_include_directories(n100_imu_plugin PRIVATE "${CMAKE_SOURCE_DIR}/include")
+  target_link_libraries(
+    n100_imu_plugin
+    PRIVATE robo_lab
+            robo_lab_proto
+            yaml-cpp::yaml-cpp
+            robo_serial)
+  set_target_properties(
+    n100_imu_plugin
+    PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
+               OUTPUT_NAME "n100_imu_plugin"
+               POSITION_INDEPENDENT_CODE ON
+               BUILD_RPATH "${CMAKE_BINARY_DIR}/src")
+  target_compile_features(n100_imu_plugin PRIVATE cxx_std_17)
+endif()
+
 # ROS <-> Zenoh raw-byte bridge plugin (optional).
 option(ROBOLAB_BUILD_ROS_BRIDGE "Build ros_bridge_plugin (requires ROS1/catkin)" ON)
 if(ROBOLAB_BUILD_ROS_BRIDGE)
   set(PYTHON_EXECUTABLE /usr/bin/python3)
-  find_package(catkin REQUIRED COMPONENTS roscpp std_msgs sensor_msgs geometry_msgs)
+  find_package(catkin REQUIRED COMPONENTS roscpp std_msgs sensor_msgs geometry_msgs nav_msgs)
   add_library(ros_bridge_plugin MODULE ros_bridge_plugin.cpp)
   target_include_directories(
     ros_bridge_plugin

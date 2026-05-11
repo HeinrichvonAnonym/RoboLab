@@ -70,4 +70,41 @@ std::vector<Eigen::Matrix4d> JacobianCalculator::compute_link_transforms(
     return transforms;
 }
 
+Eigen::Matrix4d JacobianCalculator::compute_ee_transform(
+    const std::vector<double>& q,
+    const Eigen::Matrix4d& tool_offset) const {
+    const auto transforms = compute_link_transforms(q);
+    if (transforms.empty()) {
+        return tool_offset;
+    }
+    return transforms.back() * tool_offset;
+}
+
+Eigen::MatrixXd JacobianCalculator::compute_jacobian(
+    const std::vector<double>& q,
+    const Eigen::Matrix4d& tool_offset) const {
+    const auto transforms = compute_link_transforms(q);
+    const size_t n = transforms.size();
+
+    Eigen::MatrixXd J = Eigen::MatrixXd::Zero(6, static_cast<int>(num_joints_));
+    if (n == 0) {
+        return J;
+    }
+
+    // End-effector position in base frame, shifted by the tool offset.
+    const Eigen::Vector3d O_e =
+        (transforms.back() * tool_offset).block<3, 1>(0, 3);
+
+    for (size_t i = 0; i < n; ++i) {
+        // Joint-i axis (z of frame i) and origin (any point on the axis works
+        // for the cross product; we use the frame origin).
+        const Eigen::Vector3d Z_i = transforms[i].block<3, 1>(0, 2);
+        const Eigen::Vector3d O_i = transforms[i].block<3, 1>(0, 3);
+
+        J.block<3, 1>(0, static_cast<int>(i)) = Z_i.cross(O_e - O_i);
+        J.block<3, 1>(3, static_cast<int>(i)) = Z_i;
+    }
+    return J;
+}
+
 }  // namespace robo_lab

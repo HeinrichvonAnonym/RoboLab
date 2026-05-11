@@ -1,0 +1,25 @@
+# Single-key teleop publisher for franka.CartesianDPoseCmd.
+# Each key press publishes one delta with exactly one non-zero axis;
+# linear axes use linear_step, rotational axes use angular_step.
+#
+# Keys are case sensitive: 'W' and 'w' would map to different actions.
+# Run the bringup from an interactive terminal — stdin must be a TTY.
+
+cmd_topic: "franka/cartesian_dpose"
+
+linear_step: 0.005    # metres per press
+angular_step: 0.02    # radians per press
+
+keys_mapping:
+  "w": x_positive
+  "s": x_negative
+  "a": y_positive
+  "d": y_negative
+  "o": z_positive
+  "l": z_negative
+  "q": roll_positive
+  "e": roll_negative
+  "t": pitch_positive
+  "g": pitch_negative
+  "c": yaw_positive
+  "v": yaw_negative

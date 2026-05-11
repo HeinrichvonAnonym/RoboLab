@@ -73,3 +73,12 @@ message StampedPose{
 message RobotLinkTransforms{
   repeated StampedPose transforms = 1;
 }
+
+message CartesianDPoseCmd{
+  float dx = 1;
+  float dy = 2;
+  float dz = 3;
+  float droll = 4;
+  float dpitch = 5;
+  float dyaw = 6;
+}

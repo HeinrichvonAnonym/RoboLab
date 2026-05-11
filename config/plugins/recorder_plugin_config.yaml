@@ -1,6 +1,7 @@
 topic:
   - franka/command
   - franka/state
+  - franka/cartesian_dpose
   - HumanState
   - kinec2/depth
   - kinec2/rgb
@@ -13,6 +14,7 @@ topic:
 topic_proto:
   franka/command: franka.RobotCommand
   franka/state: franka.RobotObservation
+  franka/cartesian_dpose: franka.CartesianDPoseCmd
   HumanState: demo_inference.Observation
   kinec2/depth: kinect.rgbImage
   kinec2/rgb: kinect.rgbImage
@@ -20,5 +22,7 @@ topic_proto:
   realsense/rgb: kinect.rgbImage
 
 record_frequency: 30
-# Flush interval in seconds (periodic save only; nothing is written on process stop).
+# Periodic save interval in seconds. The recorder also performs a final
+# flush on stop() (so Ctrl-C no longer loses the in-memory buffer), but
+# a shorter interval still lets you see partial files mid-run.
 save_per_second: 20

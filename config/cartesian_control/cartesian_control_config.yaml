@@ -1,8 +1,41 @@
-# Stage 1: forward-kinematics only.
-# Subscribes to the joint-state topic, publishes per-link world poses.
-state_topic: "franka/state"
-pose_topic:  "franka/pose"
+# Cartesian control configuration.
+#
+# Pipeline (per-message):
+#   1. Subscribe state -> seed q_target on the first observation, then run
+#      FK on every state to publish per-link world poses for viz.
+#   2. Subscribe dpose -> compute geometric Jacobian at q_target (gripper TCP
+#      with tool_offset applied), solve damped LS for dq, integrate
+#      q_target += dq, clamp to joint limits, publish as franka.RobotCommand.
 
+# ---------- Topics ----------
+state_topic: "franka/state"            # SUB: franka.RobotObservation
+pose_topic:  "franka/pose"             # PUB: franka.RobotLinkTransforms (viz)
+dpose_topic: "franka/cartesian_dpose"  # SUB: franka.CartesianDPoseCmd
+cmd_topic:   "franka/command"          # PUB: franka.RobotCommand
+
+# ---------- Resolved-rate controller ----------
+# Damped least squares damping factor (rad). Higher = safer near singular
+# configurations, slower convergence. 0.05 is a sane teleop default.
+damping: 0.05
+
+# Hard per-joint clamp on |dq_i| produced by a single dpose. Keeps a
+# fat-fingered key press from ever turning into a joint jump bigger than
+# this many radians.
+max_dq_per_step: [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05]
+
+# Franka Panda nominal joint position limits (rad). q_target is clamped
+# component-wise after the Jacobian step.
+joint_lower: [-2.8973, -1.7628, -2.8973, -3.0718, -2.8973, -0.0175, -2.8973]
+joint_upper: [ 2.8973,  1.7628,  2.8973, -0.0698,  2.8973,  3.7525,  2.8973]
+
+# ---------- End-effector tool offset ----------
+# Applied after the last DH frame to position the TCP at the gripper.
+# Format: [x, y, z, qx, qy, qz, qw]. Identity = TCP at frame 7 (flange).
+# The 0.107 along z reaches the standard Franka gripper mounting plane;
+# tweak if a custom tool is attached.
+tool_offset: [0.0, 0.0, 0.107, 0.0, 0.0, 0.0, 1.0]
+
+# ---------- Forward kinematics ----------
 # Modified DH (Craig) parameters for Franka Panda, matching the tested
 # ros_ws/speed_adaptive_control baseline.
 # Format: [theta_offset, d, a, alpha]
