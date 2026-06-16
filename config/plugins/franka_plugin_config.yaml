@@ -9,6 +9,12 @@ arm_home: [-0.32, -0.9, 0.13, -2.75, 0.18, 1.95, 0.49]
 # Note: homing velocity is controlled by kMaxJointStep (0.0005 rad/cycle = 0.5 rad/s)
 skip_go_home: false  # Set true to accept commands immediately without homing
 
+enable_gripper: true
+gripper_max_width: 0.08
+gripper_closed_width: 0.0
+gripper_speed: 0.1
+gripper_close_threshold: 0.5
+
 dynamic:
   kp: [60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0]
   kd: [10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0]

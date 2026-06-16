@@ -5,10 +5,12 @@
 
 #include <array>
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 #include <franka/robot.h>
 #include <franka/model.h>
@@ -54,6 +56,8 @@ class FrankaPlugin : public Plugin {
   std::unique_ptr<franka::Gripper> gripper_;
 
   bool publish_state(const franka::RobotState& robot_state);
+  void gripper_worker_loop();
+  void stop_gripper_worker();
   uint32_t state_sequence_{0};
 
   // Thread-safe target joint positions (from cartesian controller commands)
@@ -67,6 +71,19 @@ class FrankaPlugin : public Plugin {
   double cmd_filter_alpha_{1.0};
   std::array<double, 7> q_target_filtered_{};
   bool cmd_filter_primed_{false};
+
+  bool enable_gripper_{true};
+  double gripper_max_width_{0.08};
+  double gripper_closed_width_{0.0};
+  double gripper_speed_{0.1};
+  double gripper_close_threshold_{0.5};
+  std::thread gripper_thread_;
+  std::mutex gripper_mutex_;
+  std::condition_variable gripper_cv_;
+  bool gripper_stop_{false};
+  bool has_gripper_target_{false};
+  bool gripper_target_closed_{false};
+  double gripper_target_close_norm_{0.0};
 
   // Safety limits for joint position change per step
   static constexpr double kMaxJointStep = 0.0005;  // rad per control cycle (~1ms) = 0.5 rad/s

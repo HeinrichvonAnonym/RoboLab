@@ -72,7 +72,7 @@ PORT_CONFIG_MAP: Dict[str, DynamixelRobotConfig] = {
             4 * np.pi / 2,
         ),
         joint_signs=(1, 1, 1, 1, 1, -1, 1),
-        gripper_config=(8, 158, 200),
+        gripper_config=(8, 200, 158),
     ),
     # yam
     "/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTA2U4GA-if00-port0": DynamixelRobotConfig(

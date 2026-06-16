@@ -103,8 +103,14 @@ def main(args: Args) -> int:
         publisher = None if args.dry_run else session.declare_publisher(args.cmd_topic)
         next_time = time.monotonic()
         while True:
-            action = agent.act({})
-            arm = np.asarray(action[:7], dtype=float)
+            command = np.asarray(agent.act({}), dtype=float)
+            if command.shape != (7,) and command.shape != (8,):
+                raise ValueError(
+                    f"GELLO action must contain 7 arm joints or 8 arm+gripper values, "
+                    f"got shape {command.shape}"
+                )
+            arm = command[:7]
+            gripper = float(command[7]) if command.shape[0] == 8 else None
 
             cmd = franka_pb2.RobotCommand()
             cmd.type = franka_pb2.RobotCommand.TYPE_JOINT_TARGET
@@ -115,7 +121,7 @@ def main(args: Args) -> int:
             if hasattr(cmd, "sys_time"):
                 cmd.sys_time = float(time.time())
             cmd.ClearField("joints")
-            for position in arm:
+            for position in command:
                 joint = cmd.joints.add()
                 joint.position = float(position)
                 joint.velocity = 0.0
@@ -124,7 +130,13 @@ def main(args: Args) -> int:
             if publisher is not None:
                 publisher.put(cmd.SerializeToString())
             if sequence % max(1, int(args.hz)) == 0:
-                print(f"seq={sequence} q={np.array2string(arm, precision=3)}")
+                if gripper is None:
+                    print(f"seq={sequence} q={np.array2string(arm, precision=3)}")
+                else:
+                    print(
+                        f"seq={sequence} q={np.array2string(arm, precision=3)} "
+                        f"gripper={gripper:.3f}"
+                    )
 
             next_time += period
             time.sleep(max(0.0, next_time - time.monotonic()))

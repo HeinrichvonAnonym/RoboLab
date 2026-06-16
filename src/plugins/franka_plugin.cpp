@@ -1,8 +1,9 @@
 #include "plugins/franka_plugin.h"
 
-#include <chrono>
 #include <array>
+#include <chrono>
 #include <cmath>
+#include <exception>
 #include <functional>
 #include <iostream>
 #include <thread>
@@ -27,6 +28,16 @@ bool read_double_sequence(const YAML::Node& node, const char* key, std::vector<d
     out->push_back(item.as<double>());
   }
   return true;
+}
+
+double clamp_double(double value, double low, double high) {
+  if (value < low) {
+    return low;
+  }
+  if (value > high) {
+    return high;
+  }
+  return value;
 }
 
 }  // namespace
@@ -113,14 +124,63 @@ bool FrankaPlugin::initialize(const std::string& config_path) {
       }
     }
 
+    if (root["enable_gripper"]) {
+      enable_gripper_ = root["enable_gripper"].as<bool>();
+    }
+    if (root["gripper_max_width"]) {
+      gripper_max_width_ = root["gripper_max_width"].as<double>();
+      if (gripper_max_width_ <= 0.0) {
+        std::cerr << "franka_plugin: gripper_max_width must be positive (got "
+                  << gripper_max_width_ << ")\n";
+        return false;
+      }
+    }
+    if (root["gripper_closed_width"]) {
+      gripper_closed_width_ = root["gripper_closed_width"].as<double>();
+      if (gripper_closed_width_ < 0.0 || gripper_closed_width_ > gripper_max_width_) {
+        std::cerr << "franka_plugin: gripper_closed_width must be in [0, gripper_max_width] (got "
+                  << gripper_closed_width_ << ")\n";
+        return false;
+      }
+    }
+    if (root["gripper_speed"]) {
+      gripper_speed_ = root["gripper_speed"].as<double>();
+      if (gripper_speed_ <= 0.0) {
+        std::cerr << "franka_plugin: gripper_speed must be positive (got "
+                  << gripper_speed_ << ")\n";
+        return false;
+      }
+    }
+    if (root["gripper_close_threshold"]) {
+      gripper_close_threshold_ = root["gripper_close_threshold"].as<double>();
+      if (gripper_close_threshold_ < 0.0 || gripper_close_threshold_ > 1.0) {
+        std::cerr << "franka_plugin: gripper_close_threshold must be in [0, 1] (got "
+                  << gripper_close_threshold_ << ")\n";
+        return false;
+      }
+    }
+    if (enable_gripper_) {
+      gripper_ = std::make_unique<franka::Gripper>(robot_ip_);
+    }
+
   } catch (const YAML::Exception& e) {
     std::cerr << "franka_plugin: YAML error in " << config_path << ": " << e.what() << '\n';
+    return false;
+  } catch (const std::exception& e) {
+    std::cerr << "franka_plugin: failed to initialize Franka interface: " << e.what() << '\n';
     return false;
   }
 
   std::cout << "franka_plugin: initialized (robot_ip=" << robot_ip_ << ", cmd_topic=" << cmd_topic_ << ", state_topic=" << state_topic_
             << ", control_mode=" << control_mode_
-            << ", cmd_filter_alpha=" << cmd_filter_alpha_;
+            << ", cmd_filter_alpha=" << cmd_filter_alpha_
+            << ", enable_gripper=" << (enable_gripper_ ? "true" : "false");
+  if (enable_gripper_) {
+    std::cout << ", gripper_max_width=" << gripper_max_width_
+              << ", gripper_closed_width=" << gripper_closed_width_
+              << ", gripper_speed=" << gripper_speed_
+              << ", gripper_close_threshold=" << gripper_close_threshold_;
+  }
   if (!kp_gains_.empty()) {
     std::cout << ", gains n=" << kp_gains_.size();
   }
@@ -136,8 +196,8 @@ void FrankaPlugin::cmd_subscriber_callback(const std::string& key, const std::st
     return;
   }
   
-  if (cmd.joints_size() != 7) {
-    std::cerr << "franka_plugin: expected 7 joints, got " << cmd.joints_size() << "\n";
+  if (cmd.joints_size() != 7 && cmd.joints_size() != 8) {
+    std::cerr << "franka_plugin: expected 7 or 8 command joints, got " << cmd.joints_size() << "\n";
     return;
   }
   
@@ -149,6 +209,26 @@ void FrankaPlugin::cmd_subscriber_callback(const std::string& key, const std::st
     }
     has_target_ = true;
   }
+
+  if (cmd.joints_size() == 8) {
+    if (!enable_gripper_) {
+      static bool warned_gripper_disabled = false;
+      if (!warned_gripper_disabled) {
+        std::cerr << "franka_plugin: received 8D command but gripper is disabled\n";
+        warned_gripper_disabled = true;
+      }
+    } else {
+      const double close_norm = clamp_double(cmd.joints(7).position(), 0.0, 1.0);
+      const bool target_closed = close_norm >= gripper_close_threshold_;
+      {
+        std::lock_guard<std::mutex> lock(gripper_mutex_);
+        gripper_target_close_norm_ = close_norm;
+        gripper_target_closed_ = target_closed;
+        has_gripper_target_ = true;
+      }
+      gripper_cv_.notify_one();
+    }
+  }
   
   // Debug output
   static int cmd_counter = 0;
@@ -158,7 +238,59 @@ void FrankaPlugin::cmd_subscriber_callback(const std::string& key, const std::st
       std::cout << cmd.joints(i).position();
       if (i < 6) std::cout << ", ";
     }
-    std::cout << "]\n";
+    std::cout << "]";
+    if (cmd.joints_size() == 8) {
+      std::cout << " gripper=" << cmd.joints(7).position();
+    }
+    std::cout << "\n";
+  }
+}
+
+void FrankaPlugin::gripper_worker_loop() {
+  bool last_command_closed = false;
+  bool has_last_command = false;
+  while (true) {
+    bool target_closed = false;
+    double close_norm = 0.0;
+    {
+      std::unique_lock<std::mutex> lock(gripper_mutex_);
+      gripper_cv_.wait(lock, [&] { return gripper_stop_ || has_gripper_target_; });
+      if (gripper_stop_) {
+        break;
+      }
+      target_closed = gripper_target_closed_;
+      close_norm = gripper_target_close_norm_;
+    }
+
+    if (has_last_command && target_closed == last_command_closed) {
+      continue;
+    }
+
+    try {
+      if (!gripper_) {
+        continue;
+      }
+      const double width = target_closed ? gripper_closed_width_ : gripper_max_width_;
+      std::cout << "[FrankaPlugin] gripper "
+                << (target_closed ? "close" : "open")
+                << " (gello=" << close_norm << ", width=" << width << ")\n";
+      gripper_->move(width, gripper_speed_);
+      last_command_closed = target_closed;
+      has_last_command = true;
+    } catch (const std::exception& e) {
+      std::cerr << "franka_plugin: gripper move failed: " << e.what() << '\n';
+    }
+  }
+}
+
+void FrankaPlugin::stop_gripper_worker() {
+  {
+    std::lock_guard<std::mutex> lock(gripper_mutex_);
+    gripper_stop_ = true;
+  }
+  gripper_cv_.notify_one();
+  if (gripper_thread_.joinable()) {
+    gripper_thread_.join();
   }
 }
 
@@ -209,6 +341,13 @@ void FrankaPlugin::run() {
       message_system_->close();
     }
     return;
+  }
+  if (enable_gripper_ && gripper_ && !gripper_thread_.joinable()) {
+    {
+      std::lock_guard<std::mutex> lock(gripper_mutex_);
+      gripper_stop_ = false;
+    }
+    gripper_thread_ = std::thread(&FrankaPlugin::gripper_worker_loop, this);
   }
   constexpr double kTauLimit = 60.0;  // Conservative software saturation.
 
@@ -336,6 +475,7 @@ void FrankaPlugin::run() {
   }
 
   std::cout << "franka_plugin: run loop exited\n";
+  stop_gripper_worker();
   robot_->stop();
   // Close Zenoh on the run thread so no concurrent publish_state() + close() race.
   if (message_system_) {
@@ -382,6 +522,7 @@ void FrankaPlugin::stop() {
     return;
   }
   std::cout << "franka_plugin: stopping\n";
+  stop_gripper_worker();
 }
 
 }  // namespace robo_lab
