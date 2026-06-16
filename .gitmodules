@@ -1,3 +1,9 @@
 [submodule "python/benchmark/asset/robot/URDF2FBX"]
 	path = python/benchmark/asset/robot/URDF2FBX
 	url = https://github.com/PiggyGaGa/URDF2FBX.git
+[submodule "python/third_party/gello_software/third_party/DynamixelSDK"]
+	path = python/third_party/gello_software/third_party/DynamixelSDK
+	url = https://github.com/ROBOTIS-GIT/DynamixelSDK.git
+[submodule "python/third_party/gello_software/third_party/mujoco_menagerie"]
+	path = python/third_party/gello_software/third_party/mujoco_menagerie
+	url = https://github.com/google-deepmind/mujoco_menagerie.git

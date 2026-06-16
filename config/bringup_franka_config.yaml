@@ -16,9 +16,9 @@ plugins:
   #   config: config/plugins/kinect_plugin_config.yaml
   #   lib: ./build/plugins/libkinect_plugin.so
 
-  # - name: realsense_plugin
-  #   config: config/plugins/realsense_plugin_config.yaml
-  #   lib: ./build/plugins/librealsense_plugin.so
+  - name: realsense_plugin
+    config: config/plugins/realsense_plugin_config.yaml
+    lib: ./build/plugins/librealsense_plugin.so
 
   - name: ros_bridge_plugin
     config: config/plugins/ros_bridge_plugin_config.yaml
@@ -26,16 +26,16 @@ plugins:
 
   # Teleop publisher: reads keys from stdin, publishes franka.CartesianDPoseCmd
   # on `franka/cartesian_dpose` per press. Recorder picks it up below.
-  - name: keyboard_plugin
-    config: config/plugins/keyboard_plugin_config.yaml
-    lib: ./build/plugins/libkeyboard_plugin.so
+  # - name: keyboard_plugin
+  #   config: config/plugins/keyboard_plugin_config.yaml
+  #   lib: ./build/plugins/libkeyboard_plugin.so
 
-  # Cartesian controller: consumes dpose commands from keyboard_plugin,
-  # solves resolved-rate joint deltas via DLS pseudoinverse, and republishes
-  # joint targets on franka/command for franka_plugin to track.
-  - name: cartesian_control_plugin
-    config: config/plugins/cartesian_controller_plugin_config.yaml
-    lib: ./build/plugins/libcartesian_control_plugin.so
+  # # Cartesian controller: consumes dpose commands from keyboard_plugin,
+  # # solves resolved-rate joint deltas via DLS pseudoinverse, and republishes
+  # # joint targets on franka/command for franka_plugin to track.
+  # - name: cartesian_control_plugin
+  #   config: config/plugins/cartesian_controller_plugin_config.yaml
+  #   lib: ./build/plugins/libcartesian_control_plugin.so
 
   - name: recorder_plugin
     config: config/plugins/recorder_plugin_config.yaml

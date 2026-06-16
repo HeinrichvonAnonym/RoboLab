@@ -1,4 +1,5 @@
 build/
+build.incompatible-glibc/
 proto/*.cc
 proto/*.h
 proto/*.pb.h
