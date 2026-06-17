@@ -56,7 +56,8 @@ class FrankaPlugin : public Plugin {
   std::unique_ptr<franka::Gripper> gripper_;
 
   bool publish_state(const franka::RobotState& robot_state);
-  void gripper_worker_loop();
+  void gripper_action_loop();
+  void gripper_interrupt_loop();
   void stop_gripper_worker();
   uint32_t state_sequence_{0};
 
@@ -77,13 +78,20 @@ class FrankaPlugin : public Plugin {
   double gripper_closed_width_{0.0};
   double gripper_speed_{0.1};
   double gripper_close_threshold_{0.5};
-  std::thread gripper_thread_;
+  std::thread gripper_action_thread_;
+  std::thread gripper_interrupt_thread_;
   std::mutex gripper_mutex_;
-  std::condition_variable gripper_cv_;
+  std::condition_variable gripper_action_cv_;
+  std::condition_variable gripper_interrupt_cv_;
   bool gripper_stop_{false};
   bool has_gripper_target_{false};
   bool gripper_target_closed_{false};
+  bool gripper_move_in_progress_{false};
+  bool gripper_active_closed_{false};
   double gripper_target_close_norm_{0.0};
+  uint64_t gripper_target_seq_{0};
+  uint64_t gripper_active_seq_{0};
+  uint64_t gripper_stop_requested_seq_{0};
 
   // Safety limits for joint position change per step
   static constexpr double kMaxJointStep = 0.0005;  // rad per control cycle (~1ms) = 0.5 rad/s

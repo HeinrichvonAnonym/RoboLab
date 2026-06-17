@@ -220,13 +220,21 @@ void FrankaPlugin::cmd_subscriber_callback(const std::string& key, const std::st
     } else {
       const double close_norm = clamp_double(cmd.joints(7).position(), 0.0, 1.0);
       const bool target_closed = close_norm >= gripper_close_threshold_;
+      bool target_changed = false;
       {
         std::lock_guard<std::mutex> lock(gripper_mutex_);
+        target_changed = !has_gripper_target_ || gripper_target_closed_ != target_closed;
         gripper_target_close_norm_ = close_norm;
         gripper_target_closed_ = target_closed;
         has_gripper_target_ = true;
+        if (target_changed) {
+          ++gripper_target_seq_;
+        }
       }
-      gripper_cv_.notify_one();
+      if (target_changed) {
+        gripper_action_cv_.notify_one();
+        gripper_interrupt_cv_.notify_one();
+      }
     }
   }
   
@@ -246,39 +254,97 @@ void FrankaPlugin::cmd_subscriber_callback(const std::string& key, const std::st
   }
 }
 
-void FrankaPlugin::gripper_worker_loop() {
-  bool last_command_closed = false;
-  bool has_last_command = false;
+void FrankaPlugin::gripper_action_loop() {
+  uint64_t handled_seq = 0;
   while (true) {
     bool target_closed = false;
     double close_norm = 0.0;
+    uint64_t target_seq = 0;
     {
       std::unique_lock<std::mutex> lock(gripper_mutex_);
-      gripper_cv_.wait(lock, [&] { return gripper_stop_ || has_gripper_target_; });
+      gripper_action_cv_.wait(lock, [&] {
+        return gripper_stop_ || (has_gripper_target_ && gripper_target_seq_ != handled_seq);
+      });
       if (gripper_stop_) {
         break;
       }
       target_closed = gripper_target_closed_;
       close_norm = gripper_target_close_norm_;
+      target_seq = gripper_target_seq_;
+      gripper_move_in_progress_ = true;
+      gripper_active_closed_ = target_closed;
+      gripper_active_seq_ = target_seq;
+      gripper_stop_requested_seq_ = 0;
     }
-
-    if (has_last_command && target_closed == last_command_closed) {
-      continue;
-    }
+    gripper_interrupt_cv_.notify_one();
 
     try {
       if (!gripper_) {
-        continue;
+        handled_seq = target_seq;
+      } else {
+        const double width = target_closed ? gripper_closed_width_ : gripper_max_width_;
+        std::cout << "[FrankaPlugin] gripper "
+                  << (target_closed ? "close" : "open")
+                  << " (gello=" << close_norm << ", width=" << width
+                  << ", seq=" << target_seq << ")\n";
+        gripper_->move(width, gripper_speed_);
+        handled_seq = target_seq;
       }
-      const double width = target_closed ? gripper_closed_width_ : gripper_max_width_;
-      std::cout << "[FrankaPlugin] gripper "
-                << (target_closed ? "close" : "open")
-                << " (gello=" << close_norm << ", width=" << width << ")\n";
-      gripper_->move(width, gripper_speed_);
-      last_command_closed = target_closed;
-      has_last_command = true;
     } catch (const std::exception& e) {
-      std::cerr << "franka_plugin: gripper move failed: " << e.what() << '\n';
+      bool interrupted = false;
+      {
+        std::lock_guard<std::mutex> lock(gripper_mutex_);
+        interrupted = gripper_stop_ || gripper_target_seq_ != target_seq;
+      }
+      if (interrupted) {
+        std::cout << "[FrankaPlugin] gripper move interrupted: " << e.what() << '\n';
+      } else {
+        std::cerr << "franka_plugin: gripper move failed: " << e.what() << '\n';
+      }
+      handled_seq = target_seq;
+    }
+
+    {
+      std::lock_guard<std::mutex> lock(gripper_mutex_);
+      if (gripper_active_seq_ == target_seq) {
+        gripper_move_in_progress_ = false;
+      }
+    }
+    gripper_interrupt_cv_.notify_one();
+    gripper_action_cv_.notify_one();
+  }
+}
+
+void FrankaPlugin::gripper_interrupt_loop() {
+  while (true) {
+    uint64_t active_seq = 0;
+    bool should_stop = false;
+    {
+      std::unique_lock<std::mutex> lock(gripper_mutex_);
+      gripper_interrupt_cv_.wait(lock, [&] {
+        return gripper_stop_ ||
+               (gripper_move_in_progress_ && has_gripper_target_ &&
+                gripper_target_seq_ != gripper_active_seq_ &&
+                gripper_target_closed_ != gripper_active_closed_ &&
+                gripper_stop_requested_seq_ != gripper_active_seq_);
+      });
+      if (gripper_stop_) {
+        break;
+      }
+      active_seq = gripper_active_seq_;
+      gripper_stop_requested_seq_ = active_seq;
+      should_stop = true;
+    }
+
+    if (!should_stop || !gripper_) {
+      continue;
+    }
+    try {
+      std::cout << "[FrankaPlugin] gripper stop active seq=" << active_seq
+                << " for target seq change\n";
+      gripper_->stop();
+    } catch (const std::exception& e) {
+      std::cerr << "franka_plugin: gripper stop failed: " << e.what() << '\n';
     }
   }
 }
@@ -288,9 +354,20 @@ void FrankaPlugin::stop_gripper_worker() {
     std::lock_guard<std::mutex> lock(gripper_mutex_);
     gripper_stop_ = true;
   }
-  gripper_cv_.notify_one();
-  if (gripper_thread_.joinable()) {
-    gripper_thread_.join();
+  gripper_action_cv_.notify_one();
+  gripper_interrupt_cv_.notify_one();
+  if (gripper_) {
+    try {
+      gripper_->stop();
+    } catch (const std::exception& e) {
+      std::cerr << "franka_plugin: gripper stop during shutdown failed: " << e.what() << '\n';
+    }
+  }
+  if (gripper_interrupt_thread_.joinable()) {
+    gripper_interrupt_thread_.join();
+  }
+  if (gripper_action_thread_.joinable()) {
+    gripper_action_thread_.join();
   }
 }
 
@@ -342,12 +419,14 @@ void FrankaPlugin::run() {
     }
     return;
   }
-  if (enable_gripper_ && gripper_ && !gripper_thread_.joinable()) {
+  if (enable_gripper_ && gripper_ && !gripper_action_thread_.joinable() &&
+      !gripper_interrupt_thread_.joinable()) {
     {
       std::lock_guard<std::mutex> lock(gripper_mutex_);
       gripper_stop_ = false;
     }
-    gripper_thread_ = std::thread(&FrankaPlugin::gripper_worker_loop, this);
+    gripper_action_thread_ = std::thread(&FrankaPlugin::gripper_action_loop, this);
+    gripper_interrupt_thread_ = std::thread(&FrankaPlugin::gripper_interrupt_loop, this);
   }
   constexpr double kTauLimit = 60.0;  // Conservative software saturation.
 
