@@ -22,7 +22,14 @@ topic_proto:
   realsense/rgb: kinect.rgbImage
 
 record_frequency: 30
-# Periodic save interval in seconds. The recorder also performs a final
-# flush on stop() (so Ctrl-C no longer loses the in-memory buffer), but
-# a shorter interval still lets you see partial files mid-run.
-save_per_second: 20
+
+# Recording starts only after the anchor topic is received. Every
+# flush_anchor_count accepted anchor samples, the recorder appends buffered data
+# up to that anchor timestamp to the current HDF5 file and keeps newer samples
+# for the next append.
+anchor_topic: franka/state
+flush_anchor_count: 1000
+
+# keyboard_plugin publishes this topic on F1 to flush the current buffer and
+# rotate to a new HDF5 file.
+next_record_topic: next_record

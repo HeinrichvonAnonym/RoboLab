@@ -43,6 +43,7 @@ class KeyboardPlugin : public Plugin {
 
   bool load_config(const std::string& config_path);
   bool publish_direction(Direction d);
+  bool publish_next_record();
   bool enter_raw_mode();
   void restore_mode();
   static bool parse_direction_tag_(const std::string& s, Direction* out);
@@ -50,9 +51,11 @@ class KeyboardPlugin : public Plugin {
 
   std::string config_path_;
   std::string cmd_topic_{"franka/cartesian_dpose"};
+  std::string next_record_topic_{"next_record"};
   // Keys are stored as the literal byte read from stdin so case is preserved
   // (the YAML allows mapping 'W' and 'w' to different actions).
   std::unordered_map<char, Direction> key_map_;
+  std::string pending_input_;
 
   // Step magnitudes per single press.
   double linear_step_{0.005};   // m

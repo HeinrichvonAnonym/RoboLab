@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <ctime>
 #include <filesystem>
 #include <iomanip>
@@ -27,44 +28,121 @@ int64_t now_ns_wall() {
   return std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
 }
 
-void WriteDataset1D(hid_t group_id, const char* name, const std::vector<int64_t>& data) {
-  if (data.empty()) return;
-  hsize_t dims[1] = {data.size()};
-  hid_t space = H5Screate_simple(1, dims, nullptr);
-  hid_t ds = H5Dcreate2(group_id, name, H5T_NATIVE_INT64, space, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-  H5Dwrite(ds, H5T_NATIVE_INT64, H5S_ALL, H5S_ALL, H5P_DEFAULT, data.data());
-  H5Dclose(ds);
-  H5Sclose(space);
+hid_t OpenOrCreateGroup(hid_t file_id, const std::string& group_name) {
+  if (H5Lexists(file_id, group_name.c_str(), H5P_DEFAULT) > 0) {
+    return H5Gopen2(file_id, group_name.c_str(), H5P_DEFAULT);
+  }
+  return H5Gcreate2(file_id, group_name.c_str(), H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
 }
 
-void WriteDataset1D(hid_t group_id, const char* name, const std::vector<uint32_t>& data) {
-  if (data.empty()) return;
-  hsize_t dims[1] = {data.size()};
-  hid_t space = H5Screate_simple(1, dims, nullptr);
-  hid_t ds = H5Dcreate2(group_id, name, H5T_NATIVE_UINT32, space, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-  H5Dwrite(ds, H5T_NATIVE_UINT32, H5S_ALL, H5S_ALL, H5P_DEFAULT, data.data());
-  H5Dclose(ds);
+hid_t OpenOrCreateDataset1D(hid_t group_id, const char* name, hid_t type, hsize_t chunk_hint) {
+  if (H5Lexists(group_id, name, H5P_DEFAULT) > 0) {
+    return H5Dopen2(group_id, name, H5P_DEFAULT);
+  }
+
+  hsize_t dims[1] = {0};
+  hsize_t max_dims[1] = {H5S_UNLIMITED};
+  hid_t space = H5Screate_simple(1, dims, max_dims);
+  hid_t dcpl = H5Pcreate(H5P_DATASET_CREATE);
+  hsize_t chunk[1] = {std::max<hsize_t>(1, std::min<hsize_t>(chunk_hint, 1024))};
+  H5Pset_chunk(dcpl, 1, chunk);
+  hid_t ds = H5Dcreate2(group_id, name, type, space, H5P_DEFAULT, dcpl, H5P_DEFAULT);
+  H5Pclose(dcpl);
   H5Sclose(space);
+  return ds;
 }
 
-void WriteDataset1D(hid_t group_id, const char* name, const std::vector<float>& data) {
-  if (data.empty()) return;
-  hsize_t dims[1] = {data.size()};
-  hid_t space = H5Screate_simple(1, dims, nullptr);
-  hid_t ds = H5Dcreate2(group_id, name, H5T_NATIVE_FLOAT, space, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-  H5Dwrite(ds, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, data.data());
-  H5Dclose(ds);
+hid_t OpenOrCreateDataset2D(hid_t group_id, const char* name, hid_t type, hsize_t ncols,
+                            hsize_t chunk_rows_hint) {
+  if (H5Lexists(group_id, name, H5P_DEFAULT) > 0) {
+    return H5Dopen2(group_id, name, H5P_DEFAULT);
+  }
+
+  hsize_t dims[2] = {0, ncols};
+  hsize_t max_dims[2] = {H5S_UNLIMITED, ncols};
+  hid_t space = H5Screate_simple(2, dims, max_dims);
+  hid_t dcpl = H5Pcreate(H5P_DATASET_CREATE);
+  hsize_t chunk[2] = {std::max<hsize_t>(1, std::min<hsize_t>(chunk_rows_hint, 256)), ncols};
+  H5Pset_chunk(dcpl, 2, chunk);
+  hid_t ds = H5Dcreate2(group_id, name, type, space, H5P_DEFAULT, dcpl, H5P_DEFAULT);
+  H5Pclose(dcpl);
   H5Sclose(space);
+  return ds;
 }
 
-void WriteDataset2D(hid_t group_id, const char* name, const std::vector<double>& data, hsize_t nrows, hsize_t ncols) {
-  if (data.empty() || nrows == 0 || ncols == 0) return;
-  hsize_t dims[2] = {nrows, ncols};
-  hid_t space = H5Screate_simple(2, dims, nullptr);
-  hid_t ds = H5Dcreate2(group_id, name, H5T_NATIVE_DOUBLE, space, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-  H5Dwrite(ds, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, data.data());
+template <typename T>
+bool AppendDataset1D(hid_t group_id, const char* name, hid_t type, const std::vector<T>& data) {
+  hid_t ds = OpenOrCreateDataset1D(group_id, name, type, data.size());
+  if (ds < 0) {
+    return false;
+  }
+
+  hid_t old_space = H5Dget_space(ds);
+  hsize_t old_dims[1] = {0};
+  H5Sget_simple_extent_dims(old_space, old_dims, nullptr);
+  H5Sclose(old_space);
+
+  if (data.empty()) {
+    H5Dclose(ds);
+    return true;
+  }
+
+  hsize_t new_dims[1] = {old_dims[0] + data.size()};
+  H5Dset_extent(ds, new_dims);
+  hid_t file_space = H5Dget_space(ds);
+  hsize_t start[1] = {old_dims[0]};
+  hsize_t count[1] = {data.size()};
+  H5Sselect_hyperslab(file_space, H5S_SELECT_SET, start, nullptr, count, nullptr);
+  hid_t mem_space = H5Screate_simple(1, count, nullptr);
+  H5Dwrite(ds, type, mem_space, file_space, H5P_DEFAULT, data.data());
+  H5Sclose(mem_space);
+  H5Sclose(file_space);
   H5Dclose(ds);
+  return true;
+}
+
+template <typename T>
+bool AppendDataset2D(hid_t group_id, const char* name, hid_t type, const std::vector<T>& data,
+                     hsize_t nrows, hsize_t ncols) {
+  if (nrows == 0 || ncols == 0) return true;
+  hid_t ds = OpenOrCreateDataset2D(group_id, name, type, ncols, nrows);
+  if (ds < 0) {
+    return false;
+  }
+
+  hid_t old_space = H5Dget_space(ds);
+  hsize_t old_dims[2] = {0, ncols};
+  H5Sget_simple_extent_dims(old_space, old_dims, nullptr);
+  H5Sclose(old_space);
+
+  hsize_t new_dims[2] = {old_dims[0] + nrows, ncols};
+  H5Dset_extent(ds, new_dims);
+  hid_t file_space = H5Dget_space(ds);
+  hsize_t start[2] = {old_dims[0], 0};
+  hsize_t count[2] = {nrows, ncols};
+  H5Sselect_hyperslab(file_space, H5S_SELECT_SET, start, nullptr, count, nullptr);
+  hid_t mem_space = H5Screate_simple(2, count, nullptr);
+  H5Dwrite(ds, type, mem_space, file_space, H5P_DEFAULT, data.data());
+  H5Sclose(mem_space);
+  H5Sclose(file_space);
+  H5Dclose(ds);
+  return true;
+}
+
+hsize_t Dataset1DSize(hid_t group_id, const char* name) {
+  if (H5Lexists(group_id, name, H5P_DEFAULT) <= 0) {
+    return 0;
+  }
+  hid_t ds = H5Dopen2(group_id, name, H5P_DEFAULT);
+  if (ds < 0) {
+    return 0;
+  }
+  hid_t space = H5Dget_space(ds);
+  hsize_t dims[1] = {0};
+  H5Sget_simple_extent_dims(space, dims, nullptr);
   H5Sclose(space);
+  H5Dclose(ds);
+  return dims[0];
 }
 
 }  // namespace
@@ -72,24 +150,50 @@ void WriteDataset2D(hid_t group_id, const char* name, const std::vector<double>&
 void RecorderPlugin::subscribe_callback(const std::string& key, const std::string& payload) {
   const int64_t t_ns = now_ns_wall();
 
-  std::lock_guard<std::mutex> lk(buffer_mutex_);
-  if (!accepting_) {
-    return;
-  }
+  {
+    std::lock_guard<std::mutex> lk(buffer_mutex_);
+    if (!accepting_) {
+      return;
+    }
 
-  const float hz = std::max(record_frequency_, 0.1f);
-  const int64_t min_interval_ns = static_cast<int64_t>(1e9f / hz);
-  int64_t& last = last_record_ns_by_topic_[key];
-  if (last != 0 && (t_ns - last) < min_interval_ns) {
-    return;
-  }
-  last = t_ns;
+    if (!anchor_seen_ && key != anchor_topic_) {
+      return;
+    }
 
-  RecordedMessage msg;
-  msg.topic = key;
-  msg.payload = payload;
-  msg.timestamp_ns = t_ns;
-  buffer_.push_back(std::move(msg));
+    const float hz = std::max(record_frequency_, 0.1f);
+    const int64_t min_interval_ns = static_cast<int64_t>(1e9f / hz);
+    int64_t& last = last_record_ns_by_topic_[key];
+    if (last != 0 && (t_ns - last) < min_interval_ns) {
+      return;
+    }
+    last = t_ns;
+
+    if (key == anchor_topic_) {
+      anchor_seen_ = true;
+      ++anchor_count_since_flush_;
+    }
+
+    RecordedMessage msg;
+    msg.topic = key;
+    msg.payload = payload;
+    msg.timestamp_ns = t_ns;
+    buffer_.push_back(std::move(msg));
+
+    if (key == anchor_topic_ && anchor_count_since_flush_ >= flush_anchor_count_) {
+      anchor_flush_requested_ = true;
+      anchor_flush_boundary_ns_ = t_ns;
+      anchor_count_since_flush_ = 0;
+    }
+  }
+}
+
+void RecorderPlugin::next_record_callback(const std::string& key, const std::string& payload) {
+  (void)key;
+  (void)payload;
+  std::cout << "recorder_plugin: next_record requested\n";
+  std::lock_guard<std::mutex> flush_lk(flush_mutex_);
+  flush_all();
+  rotate_record_file();
 }
 
 bool RecorderPlugin::initialize(const std::string& config_path) {
@@ -120,11 +224,19 @@ bool RecorderPlugin::initialize(const std::string& config_path) {
     record_frequency_ = root["record_frequency"].as<float>();
   }
 
-  if (root["save_per_second"]) {
-    float sps = root["save_per_second"].as<float>();
-    if (sps > 0.0f) {
-      save_interval_s_ = sps;
+  if (root["anchor_topic"]) {
+    anchor_topic_ = root["anchor_topic"].as<std::string>();
+  }
+
+  if (root["flush_anchor_count"]) {
+    const int count = root["flush_anchor_count"].as<int>();
+    if (count > 0) {
+      flush_anchor_count_ = static_cast<size_t>(count);
     }
+  }
+
+  if (root["next_record_topic"]) {
+    next_record_topic_ = root["next_record_topic"].as<std::string>();
   }
 
   if (root["data_dir"]) {
@@ -145,7 +257,9 @@ bool RecorderPlugin::initialize(const std::string& config_path) {
   std::cout << "recorder_plugin: initialized, topics=" << topics_.size()
             << " topic_proto_entries=" << topic_proto_.size()
             << " record_frequency_hz=" << record_frequency_
-            << " save_interval_s=" << save_interval_s_
+            << " anchor_topic=" << anchor_topic_
+            << " flush_anchor_count=" << flush_anchor_count_
+            << " next_record_topic=" << next_record_topic_
             << " data_dir=" << data_dir_ << "\n";
   return true;
 }
@@ -153,6 +267,11 @@ bool RecorderPlugin::initialize(const std::string& config_path) {
 void RecorderPlugin::run() {
   stop_ = false;
   accepting_ = true;
+  anchor_seen_ = false;
+  anchor_count_since_flush_ = 0;
+  anchor_flush_requested_ = false;
+  anchor_flush_boundary_ns_ = 0;
+  current_h5_path_.clear();
   last_record_ns_by_topic_.clear();
   running_ = true;
 
@@ -168,50 +287,25 @@ void RecorderPlugin::run() {
     std::cout << "recorder_plugin: subscribed to '" << topic << "'\n";
   }
 
-  std::cout << "recorder_plugin: recording\n";
-
-  const bool periodic_save = (save_interval_s_ > 0.0f);
-  auto last_save = std::chrono::steady_clock::now();
+  message_system_->subscribe(
+      next_record_topic_, [this](const std::string& key, const std::string& payload) {
+        next_record_callback(key, payload);
+      });
+  std::cout << "recorder_plugin: subscribed to control topic '" << next_record_topic_ << "'\n";
+  std::cout << "recorder_plugin: waiting for anchor topic '" << anchor_topic_ << "'\n";
 
   while (!stop_) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-    if (periodic_save) {
-      const auto now = std::chrono::steady_clock::now();
-      const float elapsed_s = std::chrono::duration<float>(now - last_save).count();
-      if (elapsed_s >= save_interval_s_) {
-        last_save = now;
-
-        std::deque<RecordedMessage> snapshot;
-        {
-          std::lock_guard<std::mutex> lk(buffer_mutex_);
-          snapshot.swap(buffer_);
-        }
-        if (!snapshot.empty()) {
-          const std::string path = make_h5_path();
-          write_hdf5(path, snapshot);
-        }
-      }
-    }
+    flush_anchor_if_requested();
   }
 
-  // Final flush: snapshot the buffer before clearing it, then write to disk
-  // *before* closing the Zenoh session. Subscribers see accepting_ == false
-  // and return early, so no new data races in during the snapshot.
-  // This avoids losing whatever was accumulated since the last periodic save
-  // (e.g. low-rate teleop commands during a short test session). The previous
-  // implementation cleared the buffer on stop(); switching to a guarded flush
-  // is safe because we still own message_system_ and the per-plugin run-loop
-  // hasn't been torn down yet by the framework.
-  std::deque<RecordedMessage> tail;
   {
     std::lock_guard<std::mutex> lk(buffer_mutex_);
     accepting_ = false;
-    tail.swap(buffer_);
   }
-  if (!tail.empty()) {
-    const std::string path = make_h5_path();
-    write_hdf5(path, tail);
+  {
+    std::lock_guard<std::mutex> flush_lk(flush_mutex_);
+    flush_all();
   }
 
   if (message_system_) {
@@ -258,21 +352,79 @@ std::string RecorderPlugin::make_h5_path() const {
   return filename.str();
 }
 
-void RecorderPlugin::write_hdf5(const std::string& h5_path,
-                                const std::deque<RecordedMessage>& messages) {
+void RecorderPlugin::rotate_record_file() {
+  std::lock_guard<std::mutex> file_lk(file_mutex_);
+  current_h5_path_ = make_h5_path();
+
+  hid_t file_id = H5Fcreate(current_h5_path_.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+  if (file_id < 0) {
+    std::cerr << "recorder_plugin: failed to create new HDF5 file: " << current_h5_path_ << "\n";
+    current_h5_path_.clear();
+    return;
+  }
+  H5Fclose(file_id);
+  std::cout << "recorder_plugin: next recording file: " << current_h5_path_ << "\n";
+}
+
+void RecorderPlugin::flush_anchor_if_requested() {
+  std::lock_guard<std::mutex> flush_lk(flush_mutex_);
+
+  std::deque<RecordedMessage> snapshot;
+  {
+    std::lock_guard<std::mutex> lk(buffer_mutex_);
+    if (!anchor_flush_requested_) {
+      return;
+    }
+
+    std::deque<RecordedMessage> keep;
+    while (!buffer_.empty()) {
+      if (buffer_.front().timestamp_ns <= anchor_flush_boundary_ns_) {
+        snapshot.push_back(std::move(buffer_.front()));
+      } else {
+        keep.push_back(std::move(buffer_.front()));
+      }
+      buffer_.pop_front();
+    }
+    buffer_.swap(keep);
+    anchor_flush_requested_ = false;
+    anchor_flush_boundary_ns_ = 0;
+  }
+
+  if (!snapshot.empty()) {
+    append_hdf5(snapshot);
+  }
+}
+
+void RecorderPlugin::flush_all() {
+  std::deque<RecordedMessage> snapshot;
+  {
+    std::lock_guard<std::mutex> lk(buffer_mutex_);
+    snapshot.swap(buffer_);
+    anchor_count_since_flush_ = 0;
+    anchor_flush_requested_ = false;
+    anchor_flush_boundary_ns_ = 0;
+  }
+
+  if (!snapshot.empty()) {
+    append_hdf5(snapshot);
+  }
+}
+
+void RecorderPlugin::append_hdf5(const std::deque<RecordedMessage>& messages) {
   if (messages.empty()) {
     return;
   }
 
-  // Write to *.h5.part then atomic rename. Prevents readers/tools from opening a truncated file
-  // mid-write (common cause of "bad object header version" / deserialize errors).
-  const std::string part_path = h5_path + ".part";
-  std::error_code fs_ec;
-  std::filesystem::remove(part_path, fs_ec);
+  std::lock_guard<std::mutex> file_lk(file_mutex_);
+  if (current_h5_path_.empty()) {
+    current_h5_path_ = make_h5_path();
+  }
 
-  hid_t file_id = H5Fcreate(part_path.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+  const bool exists = std::filesystem::exists(current_h5_path_);
+  hid_t file_id = exists ? H5Fopen(current_h5_path_.c_str(), H5F_ACC_RDWR, H5P_DEFAULT)
+                         : H5Fcreate(current_h5_path_.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
   if (file_id < 0) {
-    std::cerr << "recorder_plugin: failed to create HDF5 temp file: " << part_path << "\n";
+    std::cerr << "recorder_plugin: failed to open HDF5 file: " << current_h5_path_ << "\n";
     return;
   }
 
@@ -280,7 +432,7 @@ void RecorderPlugin::write_hdf5(const std::string& h5_path,
     std::string group_name = topic;
     std::replace(group_name.begin(), group_name.end(), '/', '_');
 
-    hid_t group_id = H5Gcreate2(file_id, group_name.c_str(), H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    hid_t group_id = OpenOrCreateGroup(file_id, group_name);
     if (group_id < 0) {
       std::cerr << "recorder_plugin: failed to create group: " << group_name << "\n";
       continue;
@@ -307,7 +459,7 @@ void RecorderPlugin::write_hdf5(const std::string& h5_path,
     for (const auto& msg : topic_msgs) {
       timestamps.push_back(msg.timestamp_ns);
     }
-    WriteDataset1D(group_id, "timestamps_ns", timestamps);
+    AppendDataset1D(group_id, "timestamps_ns", H5T_NATIVE_INT64, timestamps);
 
     if (proto_name == "franka.RobotObservation") {
       std::vector<uint32_t> type_vec;
@@ -356,12 +508,12 @@ void RecorderPlugin::write_hdf5(const std::string& h5_path,
         }
       }
 
-      WriteDataset1D(group_id, "type", type_vec);
-      WriteDataset1D(group_id, "sequence", sequence_vec);
-      WriteDataset1D(group_id, "sys_time", sys_time_vec);
-      WriteDataset2D(group_id, "joints_position", joint_pos_vec, topic_msgs.size(), 7);
-      WriteDataset2D(group_id, "joints_velocity", joint_vel_vec, topic_msgs.size(), 7);
-      WriteDataset2D(group_id, "joints_effort", joint_eff_vec, topic_msgs.size(), 7);
+      AppendDataset1D(group_id, "type", H5T_NATIVE_UINT32, type_vec);
+      AppendDataset1D(group_id, "sequence", H5T_NATIVE_UINT32, sequence_vec);
+      AppendDataset1D(group_id, "sys_time", H5T_NATIVE_FLOAT, sys_time_vec);
+      AppendDataset2D(group_id, "joints_position", H5T_NATIVE_DOUBLE, joint_pos_vec, topic_msgs.size(), 7);
+      AppendDataset2D(group_id, "joints_velocity", H5T_NATIVE_DOUBLE, joint_vel_vec, topic_msgs.size(), 7);
+      AppendDataset2D(group_id, "joints_effort", H5T_NATIVE_DOUBLE, joint_eff_vec, topic_msgs.size(), 7);
 
     } else if (proto_name == "franka.RobotCommand") {
       std::vector<uint32_t> type_vec;
@@ -410,12 +562,12 @@ void RecorderPlugin::write_hdf5(const std::string& h5_path,
         }
       }
 
-      WriteDataset1D(group_id, "type", type_vec);
-      WriteDataset1D(group_id, "sequence", sequence_vec);
-      WriteDataset1D(group_id, "sys_time", sys_time_vec);
-      WriteDataset2D(group_id, "joints_position", cmd_pos_vec, topic_msgs.size(), 7);
-      WriteDataset2D(group_id, "joints_velocity", cmd_vel_vec, topic_msgs.size(), 7);
-      WriteDataset2D(group_id, "joints_effort", cmd_eff_vec, topic_msgs.size(), 7);
+      AppendDataset1D(group_id, "type", H5T_NATIVE_UINT32, type_vec);
+      AppendDataset1D(group_id, "sequence", H5T_NATIVE_UINT32, sequence_vec);
+      AppendDataset1D(group_id, "sys_time", H5T_NATIVE_FLOAT, sys_time_vec);
+      AppendDataset2D(group_id, "joints_position", H5T_NATIVE_DOUBLE, cmd_pos_vec, topic_msgs.size(), 7);
+      AppendDataset2D(group_id, "joints_velocity", H5T_NATIVE_DOUBLE, cmd_vel_vec, topic_msgs.size(), 7);
+      AppendDataset2D(group_id, "joints_effort", H5T_NATIVE_DOUBLE, cmd_eff_vec, topic_msgs.size(), 7);
 
     } else if (proto_name == "franka.CartesianDPoseCmd") {
       // Each cartesian delta-pose command stores six floats. We pack them
@@ -441,13 +593,7 @@ void RecorderPlugin::write_hdf5(const std::string& h5_path,
         values_vec.push_back(dpose.dyaw());
       }
 
-      const hsize_t dims[2] = {topic_msgs.size(), static_cast<hsize_t>(kCols)};
-      hid_t space = H5Screate_simple(2, dims, nullptr);
-      hid_t ds = H5Dcreate2(group_id, "values", H5T_NATIVE_FLOAT, space,
-                            H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-      H5Dwrite(ds, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, values_vec.data());
-      H5Dclose(ds);
-      H5Sclose(space);
+      AppendDataset2D(group_id, "values", H5T_NATIVE_FLOAT, values_vec, topic_msgs.size(), kCols);
 
     } else if (proto_name == "demo_inference.Observation") {
       constexpr int kValuesCols = 19;
@@ -471,7 +617,7 @@ void RecorderPlugin::write_hdf5(const std::string& h5_path,
         }
       }
 
-      WriteDataset2D(group_id, "values", values_vec, topic_msgs.size(), kValuesCols);
+      AppendDataset2D(group_id, "values", H5T_NATIVE_DOUBLE, values_vec, topic_msgs.size(), kValuesCols);
 
     } else if (proto_name == "kinect.rgbImage") {
       std::vector<int32_t> width_vec;
@@ -484,10 +630,11 @@ void RecorderPlugin::write_hdf5(const std::string& h5_path,
       channels_vec.reserve(topic_msgs.size());
       type_vec.reserve(topic_msgs.size());
 
+      const uint64_t base_image_offset = static_cast<uint64_t>(Dataset1DSize(group_id, "image_data"));
       std::vector<uint64_t> img_offsets;
       std::vector<uint64_t> img_lengths;
       std::vector<char> img_blob;
-      uint64_t current_offset = 0;
+      uint64_t current_offset = base_image_offset;
 
       for (const auto& msg : topic_msgs) {
         kinect::rgbImage img;
@@ -511,48 +658,13 @@ void RecorderPlugin::write_hdf5(const std::string& h5_path,
         current_offset += img.image().size();
       }
 
-      hsize_t dims_n[1] = {topic_msgs.size()};
-      hid_t space_n = H5Screate_simple(1, dims_n, nullptr);
-
-      hid_t ds_width = H5Dcreate2(group_id, "width", H5T_NATIVE_INT32, space_n, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-      H5Dwrite(ds_width, H5T_NATIVE_INT32, H5S_ALL, H5S_ALL, H5P_DEFAULT, width_vec.data());
-      H5Dclose(ds_width);
-
-      hid_t ds_height = H5Dcreate2(group_id, "height", H5T_NATIVE_INT32, space_n, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-      H5Dwrite(ds_height, H5T_NATIVE_INT32, H5S_ALL, H5S_ALL, H5P_DEFAULT, height_vec.data());
-      H5Dclose(ds_height);
-
-      hid_t ds_channels = H5Dcreate2(group_id, "channels", H5T_NATIVE_INT32, space_n, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-      H5Dwrite(ds_channels, H5T_NATIVE_INT32, H5S_ALL, H5S_ALL, H5P_DEFAULT, channels_vec.data());
-      H5Dclose(ds_channels);
-
-      hid_t ds_type = H5Dcreate2(group_id, "format_type", H5T_NATIVE_INT32, space_n, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-      H5Dwrite(ds_type, H5T_NATIVE_INT32, H5S_ALL, H5S_ALL, H5P_DEFAULT, type_vec.data());
-      H5Dclose(ds_type);
-
-      H5Sclose(space_n);
-
-      hsize_t dims_img[1] = {img_blob.size()};
-      hid_t space_img = H5Screate_simple(1, dims_img, nullptr);
-      hid_t ds_img = H5Dcreate2(group_id, "image_data", H5T_NATIVE_CHAR, space_img, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-      if (!img_blob.empty()) {
-        H5Dwrite(ds_img, H5T_NATIVE_CHAR, H5S_ALL, H5S_ALL, H5P_DEFAULT, img_blob.data());
-      }
-      H5Dclose(ds_img);
-      H5Sclose(space_img);
-
-      hsize_t dims_idx[1] = {img_offsets.size()};
-      hid_t space_idx = H5Screate_simple(1, dims_idx, nullptr);
-
-      hid_t ds_off = H5Dcreate2(group_id, "image_offsets", H5T_NATIVE_UINT64, space_idx, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-      H5Dwrite(ds_off, H5T_NATIVE_UINT64, H5S_ALL, H5S_ALL, H5P_DEFAULT, img_offsets.data());
-      H5Dclose(ds_off);
-
-      hid_t ds_len = H5Dcreate2(group_id, "image_lengths", H5T_NATIVE_UINT64, space_idx, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-      H5Dwrite(ds_len, H5T_NATIVE_UINT64, H5S_ALL, H5S_ALL, H5P_DEFAULT, img_lengths.data());
-      H5Dclose(ds_len);
-
-      H5Sclose(space_idx);
+      AppendDataset1D(group_id, "width", H5T_NATIVE_INT32, width_vec);
+      AppendDataset1D(group_id, "height", H5T_NATIVE_INT32, height_vec);
+      AppendDataset1D(group_id, "channels", H5T_NATIVE_INT32, channels_vec);
+      AppendDataset1D(group_id, "format_type", H5T_NATIVE_INT32, type_vec);
+      AppendDataset1D(group_id, "image_data", H5T_NATIVE_CHAR, img_blob);
+      AppendDataset1D(group_id, "image_offsets", H5T_NATIVE_UINT64, img_offsets);
+      AppendDataset1D(group_id, "image_lengths", H5T_NATIVE_UINT64, img_lengths);
     }
 
     std::cout << "recorder_plugin: wrote " << topic_msgs.size() << " samples for topic '" << topic
@@ -561,19 +673,11 @@ void RecorderPlugin::write_hdf5(const std::string& h5_path,
     H5Gclose(group_id);
   }
 
-  if (H5Fclose(file_id) < 0) {
-    std::cerr << "recorder_plugin: H5Fclose failed; removing incomplete " << part_path << "\n";
-    std::filesystem::remove(part_path, fs_ec);
-    return;
-  }
+  H5Fflush(file_id, H5F_SCOPE_GLOBAL);
+  H5Fclose(file_id);
 
-  std::filesystem::rename(part_path, h5_path, fs_ec);
-  if (fs_ec) {
-    std::cerr << "recorder_plugin: rename " << part_path << " -> " << h5_path << ": " << fs_ec.message() << "\n";
-    return;
-  }
-
-  std::cout << "recorder_plugin: HDF5 saved: " << h5_path << " (messages=" << messages.size() << ")\n";
+  std::cout << "recorder_plugin: HDF5 appended: " << current_h5_path_
+            << " (messages=" << messages.size() << ")\n";
 }
 
 }  // namespace robo_lab

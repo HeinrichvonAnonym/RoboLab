@@ -27,6 +27,11 @@ char first_char_of_key(const std::string& key) {
   return key.empty() ? '\0' : key[0];
 }
 
+bool starts_with(const std::string& value, const char* prefix) {
+  const std::string p(prefix);
+  return value.size() >= p.size() && value.compare(0, p.size(), p) == 0;
+}
+
 }  // namespace
 
 // Human-readable label for log messages.
@@ -78,6 +83,9 @@ bool KeyboardPlugin::load_config(const std::string& config_path) {
 
   if (root["cmd_topic"]) {
     cmd_topic_ = root["cmd_topic"].as<std::string>();
+  }
+  if (root["next_record_topic"]) {
+    next_record_topic_ = root["next_record_topic"].as<std::string>();
   }
   if (root["linear_step"]) {
     linear_step_ = root["linear_step"].as<double>();
@@ -147,6 +155,7 @@ bool KeyboardPlugin::initialize(const std::string& config_path) {
   }
 
   std::cout << "keyboard_plugin: initialized (cmd_topic=" << cmd_topic_
+            << ", next_record_topic=" << next_record_topic_
             << ", linear_step=" << linear_step_
             << ", angular_step=" << angular_step_
             << ", keys=" << key_map_.size() << ")\n";
@@ -221,6 +230,10 @@ bool KeyboardPlugin::publish_direction(Direction d) {
   return message_system_->publish(cmd_topic_, payload);
 }
 
+bool KeyboardPlugin::publish_next_record() {
+  return message_system_ && message_system_->publish(next_record_topic_, "next_record");
+}
+
 void KeyboardPlugin::run() {
   stop_ = false;
   std::cout << "keyboard_plugin: run loop started\n";
@@ -258,9 +271,32 @@ void KeyboardPlugin::run() {
     if (n <= 0) {
       continue;
     }
-    // Drain everything that came in this read; one publish per recognised key.
-    for (ssize_t i = 0; i < n; ++i) {
-      const char ch = buf[i];
+    pending_input_.append(buf, static_cast<size_t>(n));
+    // Drain complete key sequences; one publish per recognised key or F1 press.
+    while (!pending_input_.empty()) {
+      if (starts_with(pending_input_, "\x1bOP")) {
+        const bool ok = publish_next_record();
+        std::cout << "keyboard_plugin: F1 -> next_record"
+                  << (ok ? " (published)" : " (publish FAILED)")
+                  << " on '" << next_record_topic_ << "'\n";
+        pending_input_.erase(0, 3);
+        continue;
+      }
+      if (starts_with(pending_input_, "\x1b[11~")) {
+        const bool ok = publish_next_record();
+        std::cout << "keyboard_plugin: F1 -> next_record"
+                  << (ok ? " (published)" : " (publish FAILED)")
+                  << " on '" << next_record_topic_ << "'\n";
+        pending_input_.erase(0, 5);
+        continue;
+      }
+      if (pending_input_[0] == '\x1b' &&
+          (pending_input_.size() < 3 || (pending_input_[1] == '[' && pending_input_.size() < 5))) {
+        break;
+      }
+
+      const char ch = pending_input_[0];
+      pending_input_.erase(0, 1);
       auto it = key_map_.find(ch);
       if (it == key_map_.end()) {
         // Unknown key -- log so users can see why nothing was published.
