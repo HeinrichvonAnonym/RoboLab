@@ -6,7 +6,11 @@ proto/*.pb.h
 proto/*.pb.cc
 proto/*.pb.h
 proto/*.py
-data
+
+# Recorded trajectories and partial writes (never commit)
+data/
+*.part
+*.h5.part
 
 # Python protobuf output (run scripts/regen_proto_py.sh or let publish_demo_command.py call protoc)
 scripts/gen/
@@ -32,5 +36,4 @@ __pycache__/
 ros_ws/build
 ros_ws/devel
 *.h5
-data
 
