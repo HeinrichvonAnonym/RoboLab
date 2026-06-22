@@ -47,6 +47,7 @@ class FrankaPlugin : public Plugin {
   std::string cmd_topic_;
   std::string state_topic_;
   std::string trigger_topic_{"trigger"};
+  std::string state_machine_topic_{"franka/state_machine"};
   std::string control_mode_;
   std::vector<double> kp_gains_;
   std::vector<double> kd_gains_;
@@ -55,6 +56,7 @@ class FrankaPlugin : public Plugin {
   std::array<double, 7> arm_home_;
 
   std::unique_ptr<MessageSystem> message_system_;
+  std::mutex publish_mutex_;
 
   void cmd_subscriber_callback(const std::string& key, const std::string& payload);
   void trigger_subscriber_callback(const std::string& key, const std::string& payload);
@@ -64,6 +66,7 @@ class FrankaPlugin : public Plugin {
   std::unique_ptr<franka::Gripper> gripper_;
 
   bool publish_state(const franka::RobotState& robot_state);
+  bool publish_control_state(ControlState state);
   void reset_control_session(const franka::RobotState& robot_state);
   void enter_inference_from_control(const franka::RobotState& robot_state);
   static const char* control_state_name(ControlState state);

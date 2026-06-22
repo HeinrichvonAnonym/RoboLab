@@ -101,6 +101,12 @@ bool FrankaPlugin::initialize(const std::string& config_path) {
     if (trigger_topic_.empty()) {
       trigger_topic_ = "trigger";
     }
+    if (root["state_machine_topic"]) {
+      state_machine_topic_ = root["state_machine_topic"].as<std::string>();
+    }
+    if (state_machine_topic_.empty()) {
+      state_machine_topic_ = "franka/state_machine";
+    }
 
     message_system_->subscribe(
         cmd_topic_, std::bind(&FrankaPlugin::cmd_subscriber_callback, this, std::placeholders::_1, std::placeholders::_2));
@@ -179,6 +185,7 @@ bool FrankaPlugin::initialize(const std::string& config_path) {
 
   std::cout << "franka_plugin: initialized (robot_ip=" << robot_ip_ << ", cmd_topic=" << cmd_topic_ << ", state_topic=" << state_topic_
             << ", trigger_topic=" << trigger_topic_
+            << ", state_machine_topic=" << state_machine_topic_
             << ", control_mode=" << control_mode_
             << ", cmd_filter_alpha=" << cmd_filter_alpha_
             << ", enable_gripper=" << (enable_gripper_ ? "true" : "false");
@@ -209,6 +216,19 @@ const char* FrankaPlugin::control_state_name(ControlState state) {
   return "?";
 }
 
+bool FrankaPlugin::publish_control_state(ControlState state) {
+  if (!message_system_ || state_machine_topic_.empty()) {
+    return false;
+  }
+  const char* state_name = control_state_name(state);
+  std::lock_guard<std::mutex> lock(publish_mutex_);
+  if (!message_system_->publish(state_machine_topic_, state_name)) {
+    std::cout << "franka_plugin: publish_control_state failed (" << state_name << ")\n";
+    return false;
+  }
+  return true;
+}
+
 void FrankaPlugin::reset_control_session(const franka::RobotState& robot_state) {
   control_state_.store(ControlState::kInit);
   {
@@ -218,6 +238,7 @@ void FrankaPlugin::reset_control_session(const franka::RobotState& robot_state) 
   }
   q_target_filtered_ = robot_state.q;
   cmd_filter_primed_ = true;
+  publish_control_state(ControlState::kInit);
   std::cout << "[FrankaPlugin] control session reset -> init\n";
 }
 
@@ -240,17 +261,20 @@ void FrankaPlugin::trigger_subscriber_callback(const std::string& key, const std
 
   ControlState expected = ControlState::kInit;
   if (control_state_.compare_exchange_strong(expected, ControlState::kGoHome)) {
+    publish_control_state(ControlState::kGoHome);
     std::cout << "[FrankaPlugin] trigger: init -> gohome\n";
     return;
   }
 
   expected = ControlState::kStandby;
   if (control_state_.compare_exchange_strong(expected, ControlState::kInference)) {
+    publish_control_state(ControlState::kInference);
     return;
   }
 
   expected = ControlState::kInference;
   if (control_state_.compare_exchange_strong(expected, ControlState::kStandby)) {
+    publish_control_state(ControlState::kStandby);
     std::cout << "[FrankaPlugin] trigger: inference -> standby\n";
     return;
   }
@@ -539,6 +563,7 @@ void FrankaPlugin::run() {
           } else if (state == ControlState::kGoHome) {
             if (go_home_cmd(robot_state, q_cmd)) {
               control_state_.store(ControlState::kStandby);
+              publish_control_state(ControlState::kStandby);
               std::cout << "[FrankaPlugin] go_home complete -> standby\n";
             }
             q_target_filtered_ = robot_state.q;
@@ -663,9 +688,12 @@ bool FrankaPlugin::publish_state(const franka::RobotState& robot_state) {
       return false;
     }
     // std::cout << "franka_plugin: publish_state payload size: " << payload.size() << std::endl;
-    if (!message_system_->publish(state_topic_, payload)){
-      std::cout << "franka_plugin: publish_state publish failed\n"<<std::endl;
-      return false;
+    {
+      std::lock_guard<std::mutex> lock(publish_mutex_);
+      if (!message_system_->publish(state_topic_, payload)){
+        std::cout << "franka_plugin: publish_state publish failed\n"<<std::endl;
+        return false;
+      }
     }
     return true;
   }

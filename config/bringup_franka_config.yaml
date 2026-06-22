@@ -30,12 +30,12 @@ plugins:
     config: config/plugins/keyboard_plugin_config.yaml
     lib: ./build/plugins/libkeyboard_plugin.so
 
-  # Cartesian controller: consumes dpose commands from keyboard_plugin,
-  # solves resolved-rate joint deltas via DLS pseudoinverse, and republishes
-  # joint targets on franka/command for franka_plugin to track.
-  - name: cartesian_control_plugin
-    config: config/plugins/cartesian_controller_plugin_config.yaml
-    lib: ./build/plugins/libcartesian_control_plugin.so
+  # # Cartesian controller: consumes dpose commands from keyboard_plugin,
+  # # solves resolved-rate joint deltas via DLS pseudoinverse, and republishes
+  # # joint targets on franka/command for franka_plugin to track.
+  # - name: cartesian_control_plugin
+  #   config: config/plugins/cartesian_controller_plugin_config.yaml
+  #   lib: ./build/plugins/libcartesian_control_plugin.so
 
   - name: recorder_plugin
     config: config/plugins/recorder_plugin_config.yaml

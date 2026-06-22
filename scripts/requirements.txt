@@ -4,3 +4,4 @@ protobuf>=3.19.0
 numpy
 h5py
 opencv-python
+mujoco
