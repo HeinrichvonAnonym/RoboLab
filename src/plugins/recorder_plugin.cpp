@@ -23,6 +23,8 @@ namespace robo_lab {
 
 namespace {
 
+constexpr int kFrankaRecordedJoints = 8;
+
 int64_t now_ns_wall() {
   const auto now = std::chrono::system_clock::now();
   return std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
@@ -472,9 +474,9 @@ void RecorderPlugin::append_hdf5(const std::deque<RecordedMessage>& messages) {
       type_vec.reserve(topic_msgs.size());
       sequence_vec.reserve(topic_msgs.size());
       sys_time_vec.reserve(topic_msgs.size());
-      joint_pos_vec.reserve(topic_msgs.size() * 7);
-      joint_vel_vec.reserve(topic_msgs.size() * 7);
-      joint_eff_vec.reserve(topic_msgs.size() * 7);
+      joint_pos_vec.reserve(topic_msgs.size() * kFrankaRecordedJoints);
+      joint_vel_vec.reserve(topic_msgs.size() * kFrankaRecordedJoints);
+      joint_eff_vec.reserve(topic_msgs.size() * kFrankaRecordedJoints);
 
       for (const auto& msg : topic_msgs) {
         franka::RobotObservation obs;
@@ -482,7 +484,7 @@ void RecorderPlugin::append_hdf5(const std::deque<RecordedMessage>& messages) {
           type_vec.push_back(0);
           sequence_vec.push_back(0);
           sys_time_vec.push_back(0.0f);
-          for (int i = 0; i < 7; ++i) {
+          for (int i = 0; i < kFrankaRecordedJoints; ++i) {
             joint_pos_vec.push_back(0.0);
             joint_vel_vec.push_back(0.0);
             joint_eff_vec.push_back(0.0);
@@ -494,7 +496,7 @@ void RecorderPlugin::append_hdf5(const std::deque<RecordedMessage>& messages) {
         sys_time_vec.push_back(obs.sys_time());
 
         int joint_count = obs.joints_size();
-        for (int i = 0; i < 7; ++i) {
+        for (int i = 0; i < kFrankaRecordedJoints; ++i) {
           if (i < joint_count) {
             const auto& j = obs.joints(i);
             joint_pos_vec.push_back(j.position());
@@ -511,9 +513,12 @@ void RecorderPlugin::append_hdf5(const std::deque<RecordedMessage>& messages) {
       AppendDataset1D(group_id, "type", H5T_NATIVE_UINT32, type_vec);
       AppendDataset1D(group_id, "sequence", H5T_NATIVE_UINT32, sequence_vec);
       AppendDataset1D(group_id, "sys_time", H5T_NATIVE_FLOAT, sys_time_vec);
-      AppendDataset2D(group_id, "joints_position", H5T_NATIVE_DOUBLE, joint_pos_vec, topic_msgs.size(), 7);
-      AppendDataset2D(group_id, "joints_velocity", H5T_NATIVE_DOUBLE, joint_vel_vec, topic_msgs.size(), 7);
-      AppendDataset2D(group_id, "joints_effort", H5T_NATIVE_DOUBLE, joint_eff_vec, topic_msgs.size(), 7);
+      AppendDataset2D(group_id, "joints_position", H5T_NATIVE_DOUBLE, joint_pos_vec, topic_msgs.size(),
+                      kFrankaRecordedJoints);
+      AppendDataset2D(group_id, "joints_velocity", H5T_NATIVE_DOUBLE, joint_vel_vec, topic_msgs.size(),
+                      kFrankaRecordedJoints);
+      AppendDataset2D(group_id, "joints_effort", H5T_NATIVE_DOUBLE, joint_eff_vec, topic_msgs.size(),
+                      kFrankaRecordedJoints);
 
     } else if (proto_name == "franka.RobotCommand") {
       std::vector<uint32_t> type_vec;
@@ -526,9 +531,9 @@ void RecorderPlugin::append_hdf5(const std::deque<RecordedMessage>& messages) {
       type_vec.reserve(topic_msgs.size());
       sequence_vec.reserve(topic_msgs.size());
       sys_time_vec.reserve(topic_msgs.size());
-      cmd_pos_vec.reserve(topic_msgs.size() * 7);
-      cmd_vel_vec.reserve(topic_msgs.size() * 7);
-      cmd_eff_vec.reserve(topic_msgs.size() * 7);
+      cmd_pos_vec.reserve(topic_msgs.size() * kFrankaRecordedJoints);
+      cmd_vel_vec.reserve(topic_msgs.size() * kFrankaRecordedJoints);
+      cmd_eff_vec.reserve(topic_msgs.size() * kFrankaRecordedJoints);
 
       for (const auto& msg : topic_msgs) {
         franka::RobotCommand cmd;
@@ -536,7 +541,7 @@ void RecorderPlugin::append_hdf5(const std::deque<RecordedMessage>& messages) {
           type_vec.push_back(0);
           sequence_vec.push_back(0);
           sys_time_vec.push_back(0.0f);
-          for (int i = 0; i < 7; ++i) {
+          for (int i = 0; i < kFrankaRecordedJoints; ++i) {
             cmd_pos_vec.push_back(0.0);
             cmd_vel_vec.push_back(0.0);
             cmd_eff_vec.push_back(0.0);
@@ -548,7 +553,7 @@ void RecorderPlugin::append_hdf5(const std::deque<RecordedMessage>& messages) {
         sys_time_vec.push_back(cmd.sys_time());
 
         int joint_count = cmd.joints_size();
-        for (int i = 0; i < 7; ++i) {
+        for (int i = 0; i < kFrankaRecordedJoints; ++i) {
           if (i < joint_count) {
             const auto& j = cmd.joints(i);
             cmd_pos_vec.push_back(j.position());
@@ -565,9 +570,12 @@ void RecorderPlugin::append_hdf5(const std::deque<RecordedMessage>& messages) {
       AppendDataset1D(group_id, "type", H5T_NATIVE_UINT32, type_vec);
       AppendDataset1D(group_id, "sequence", H5T_NATIVE_UINT32, sequence_vec);
       AppendDataset1D(group_id, "sys_time", H5T_NATIVE_FLOAT, sys_time_vec);
-      AppendDataset2D(group_id, "joints_position", H5T_NATIVE_DOUBLE, cmd_pos_vec, topic_msgs.size(), 7);
-      AppendDataset2D(group_id, "joints_velocity", H5T_NATIVE_DOUBLE, cmd_vel_vec, topic_msgs.size(), 7);
-      AppendDataset2D(group_id, "joints_effort", H5T_NATIVE_DOUBLE, cmd_eff_vec, topic_msgs.size(), 7);
+      AppendDataset2D(group_id, "joints_position", H5T_NATIVE_DOUBLE, cmd_pos_vec, topic_msgs.size(),
+                      kFrankaRecordedJoints);
+      AppendDataset2D(group_id, "joints_velocity", H5T_NATIVE_DOUBLE, cmd_vel_vec, topic_msgs.size(),
+                      kFrankaRecordedJoints);
+      AppendDataset2D(group_id, "joints_effort", H5T_NATIVE_DOUBLE, cmd_eff_vec, topic_msgs.size(),
+                      kFrankaRecordedJoints);
 
     } else if (proto_name == "franka.CartesianDPoseCmd") {
       // Each cartesian delta-pose command stores six floats. We pack them
