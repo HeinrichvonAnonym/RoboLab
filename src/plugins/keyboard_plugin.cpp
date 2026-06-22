@@ -87,6 +87,9 @@ bool KeyboardPlugin::load_config(const std::string& config_path) {
   if (root["next_record_topic"]) {
     next_record_topic_ = root["next_record_topic"].as<std::string>();
   }
+  if (root["trigger_topic"]) {
+    trigger_topic_ = root["trigger_topic"].as<std::string>();
+  }
   if (root["linear_step"]) {
     linear_step_ = root["linear_step"].as<double>();
   }
@@ -156,6 +159,7 @@ bool KeyboardPlugin::initialize(const std::string& config_path) {
 
   std::cout << "keyboard_plugin: initialized (cmd_topic=" << cmd_topic_
             << ", next_record_topic=" << next_record_topic_
+            << ", trigger_topic=" << trigger_topic_
             << ", linear_step=" << linear_step_
             << ", angular_step=" << angular_step_
             << ", keys=" << key_map_.size() << ")\n";
@@ -234,6 +238,10 @@ bool KeyboardPlugin::publish_next_record() {
   return message_system_ && message_system_->publish(next_record_topic_, "next_record");
 }
 
+bool KeyboardPlugin::publish_trigger() {
+  return message_system_ && message_system_->publish(trigger_topic_, "trigger");
+}
+
 void KeyboardPlugin::run() {
   stop_ = false;
   std::cout << "keyboard_plugin: run loop started\n";
@@ -272,7 +280,7 @@ void KeyboardPlugin::run() {
       continue;
     }
     pending_input_.append(buf, static_cast<size_t>(n));
-    // Drain complete key sequences; one publish per recognised key or F1 press.
+    // Drain complete key sequences; one publish per recognised key or function key press.
     while (!pending_input_.empty()) {
       if (starts_with(pending_input_, "\x1bOP")) {
         const bool ok = publish_next_record();
@@ -287,6 +295,22 @@ void KeyboardPlugin::run() {
         std::cout << "keyboard_plugin: F1 -> next_record"
                   << (ok ? " (published)" : " (publish FAILED)")
                   << " on '" << next_record_topic_ << "'\n";
+        pending_input_.erase(0, 5);
+        continue;
+      }
+      if (starts_with(pending_input_, "\x1bOQ")) {
+        const bool ok = publish_trigger();
+        std::cout << "keyboard_plugin: F2 -> trigger"
+                  << (ok ? " (published)" : " (publish FAILED)")
+                  << " on '" << trigger_topic_ << "'\n";
+        pending_input_.erase(0, 3);
+        continue;
+      }
+      if (starts_with(pending_input_, "\x1b[12~")) {
+        const bool ok = publish_trigger();
+        std::cout << "keyboard_plugin: F2 -> trigger"
+                  << (ok ? " (published)" : " (publish FAILED)")
+                  << " on '" << trigger_topic_ << "'\n";
         pending_input_.erase(0, 5);
         continue;
       }

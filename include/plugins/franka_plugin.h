@@ -35,27 +35,38 @@ class FrankaPlugin : public Plugin {
   bool go_home_cmd(const franka::RobotState& robot_state, std::array<double, 7>& q_cmd);
 
  private:
-  bool control_is_activated_{false};
-  bool skip_go_home_{false};
+  enum class ControlState {
+    kInit,
+    kGoHome,
+    kStandby,
+    kInference,
+  };
+
   std::string config_path_;
   std::string robot_ip_;
   std::string cmd_topic_;
   std::string state_topic_;
+  std::string trigger_topic_{"trigger"};
   std::string control_mode_;
   std::vector<double> kp_gains_;
   std::vector<double> kd_gains_;
   std::atomic<bool> stop_{false};
+  std::atomic<ControlState> control_state_{ControlState::kInit};
   std::array<double, 7> arm_home_;
 
   std::unique_ptr<MessageSystem> message_system_;
 
   void cmd_subscriber_callback(const std::string& key, const std::string& payload);
+  void trigger_subscriber_callback(const std::string& key, const std::string& payload);
 
   std::unique_ptr<franka::Robot> robot_;
   std::unique_ptr<franka::Model> model_;
   std::unique_ptr<franka::Gripper> gripper_;
 
   bool publish_state(const franka::RobotState& robot_state);
+  void reset_control_session(const franka::RobotState& robot_state);
+  void enter_inference_from_control(const franka::RobotState& robot_state);
+  static const char* control_state_name(ControlState state);
   void gripper_action_loop();
   void gripper_interrupt_loop();
   void stop_gripper_worker();

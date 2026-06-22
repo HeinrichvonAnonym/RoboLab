@@ -95,9 +95,19 @@ bool FrankaPlugin::initialize(const std::string& config_path) {
     if(state_topic_.empty()) {
       state_topic_ = "robot/state";
     }
+    if (root["trigger_topic"]) {
+      trigger_topic_ = root["trigger_topic"].as<std::string>();
+    }
+    if (trigger_topic_.empty()) {
+      trigger_topic_ = "trigger";
+    }
 
     message_system_->subscribe(
         cmd_topic_, std::bind(&FrankaPlugin::cmd_subscriber_callback, this, std::placeholders::_1, std::placeholders::_2));
+    message_system_->subscribe(
+        trigger_topic_,
+        std::bind(&FrankaPlugin::trigger_subscriber_callback, this,
+                  std::placeholders::_1, std::placeholders::_2));
 
     if (root["control_mode"]) {
       control_mode_ = root["control_mode"].as<std::string>();
@@ -109,10 +119,6 @@ bool FrankaPlugin::initialize(const std::string& config_path) {
       }
     } else {
       arm_home_ = {-0.32, -0.9, 0.13, -2.75, 0.18, 1.95, 0.49};
-    }
-
-    if (root["skip_go_home"]) {
-      skip_go_home_ = root["skip_go_home"].as<bool>();
     }
 
     if (root["cmd_filter_alpha"]) {
@@ -172,6 +178,7 @@ bool FrankaPlugin::initialize(const std::string& config_path) {
   }
 
   std::cout << "franka_plugin: initialized (robot_ip=" << robot_ip_ << ", cmd_topic=" << cmd_topic_ << ", state_topic=" << state_topic_
+            << ", trigger_topic=" << trigger_topic_
             << ", control_mode=" << control_mode_
             << ", cmd_filter_alpha=" << cmd_filter_alpha_
             << ", enable_gripper=" << (enable_gripper_ ? "true" : "false");
@@ -188,7 +195,81 @@ bool FrankaPlugin::initialize(const std::string& config_path) {
   return true;
 }
 
+const char* FrankaPlugin::control_state_name(ControlState state) {
+  switch (state) {
+    case ControlState::kInit:
+      return "init";
+    case ControlState::kGoHome:
+      return "gohome";
+    case ControlState::kStandby:
+      return "standby";
+    case ControlState::kInference:
+      return "inference";
+  }
+  return "?";
+}
+
+void FrankaPlugin::reset_control_session(const franka::RobotState& robot_state) {
+  control_state_.store(ControlState::kInit);
+  {
+    std::lock_guard<std::mutex> lock(target_mutex_);
+    q_target_ = robot_state.q;
+    has_target_ = false;
+  }
+  q_target_filtered_ = robot_state.q;
+  cmd_filter_primed_ = true;
+  std::cout << "[FrankaPlugin] control session reset -> init\n";
+}
+
+void FrankaPlugin::enter_inference_from_control(const franka::RobotState& robot_state) {
+  {
+    std::lock_guard<std::mutex> lock(target_mutex_);
+    q_target_ = robot_state.q;
+    has_target_ = true;
+  }
+  q_target_filtered_ = robot_state.q;
+  std::cout << "[FrankaPlugin] standby trigger accepted -> inference\n";
+}
+
+void FrankaPlugin::trigger_subscriber_callback(const std::string& key, const std::string& payload) {
+  if (payload != "trigger") {
+    std::cout << "[FrankaPlugin] ignoring trigger payload on '" << key
+              << "' (bytes=" << payload.size() << ")\n";
+    return;
+  }
+
+  ControlState expected = ControlState::kInit;
+  if (control_state_.compare_exchange_strong(expected, ControlState::kGoHome)) {
+    std::cout << "[FrankaPlugin] trigger: init -> gohome\n";
+    return;
+  }
+
+  expected = ControlState::kStandby;
+  if (control_state_.compare_exchange_strong(expected, ControlState::kInference)) {
+    return;
+  }
+
+  expected = ControlState::kInference;
+  if (control_state_.compare_exchange_strong(expected, ControlState::kStandby)) {
+    std::cout << "[FrankaPlugin] trigger: inference -> standby\n";
+    return;
+  }
+
+  const ControlState state = control_state_.load();
+  std::cout << "[FrankaPlugin] trigger ignored in " << control_state_name(state) << "\n";
+}
+
 void FrankaPlugin::cmd_subscriber_callback(const std::string& key, const std::string& payload) {
+  const ControlState state = control_state_.load();
+  if (state != ControlState::kInference) {
+    static int dropped_cmd_counter = 0;
+    if (dropped_cmd_counter++ % 50 == 0) {
+      std::cout << "[FrankaPlugin] dropping command on '" << key
+                << "' while state=" << control_state_name(state) << "\n";
+    }
+    return;
+  }
+
   franka::RobotCommand cmd;
   if (!cmd.ParseFromString(payload)) {
     std::cerr << "franka_plugin: RobotCommand protobuf parse failed (key=" << key << ", bytes=" << payload.size()
@@ -437,45 +518,42 @@ void FrankaPlugin::run() {
   try{
     const franka::RobotState initial_state = robot_->readOnce();
     
-    // Initialize q_des to current position, q_target to home if no external command yet
+    // Every new libfranka control session starts inert and waits for triggers.
     std::array<double, 7> q_des = initial_state.q;
-    {
-      std::lock_guard<std::mutex> lock(target_mutex_);
-      if (!has_target_) {
-        q_target_ = arm_home_;
-      }
-    }
-    // Prime the LP filter to the current robot pose so it doesn't ramp from 0.
-    q_target_filtered_ = initial_state.q;
-    cmd_filter_primed_ = true;
-
-    // Skip go_home if configured
-    if (skip_go_home_ && !control_is_activated_) {
-      control_is_activated_ = true;
-      std::cout << "[FrankaPlugin] skip_go_home=true, control activated immediately\n";
-    }
+    reset_control_session(initial_state);
+    ControlState previous_state = ControlState::kInit;
 
 
     robot_->control(
         [&](const franka::RobotState& robot_state, franka::Duration /*duration*/) -> franka::Torques {
           // Get target command
-          std::array<double, 7> q_cmd;
-          if (!control_is_activated_) {
-            // Go-home phase: move to arm_home_ using velocity-based control
-            if (go_home_cmd(robot_state, q_cmd)) {
-              // Homing complete, switch to normal command mode
-              control_is_activated_ = true;
-              std::cout << "[FrankaPlugin] go_home complete, control activated\n";
-            }
-            // While homing, keep the filter snapped to the current robot pose
-            // so the first external command doesn't trigger a long ramp-up.
+          std::array<double, 7> q_cmd = q_des;
+          const ControlState state = control_state_.load();
+          if (previous_state != ControlState::kInference &&
+              state == ControlState::kInference) {
+            enter_inference_from_control(robot_state);
+          }
+
+          if (state == ControlState::kInit) {
             q_target_filtered_ = robot_state.q;
-          } else {
-            // Normal mode: follow external commands
+          } else if (state == ControlState::kGoHome) {
+            if (go_home_cmd(robot_state, q_cmd)) {
+              control_state_.store(ControlState::kStandby);
+              std::cout << "[FrankaPlugin] go_home complete -> standby\n";
+            }
+            q_target_filtered_ = robot_state.q;
+          } else if (state == ControlState::kStandby) {
+            q_target_filtered_ = robot_state.q;
+          } else if (state == ControlState::kInference) {
             std::array<double, 7> q_target_snapshot;
+            bool has_target_snapshot = false;
             {
               std::lock_guard<std::mutex> lock(target_mutex_);
               q_target_snapshot = q_target_;
+              has_target_snapshot = has_target_.load();
+            }
+            if (!has_target_snapshot) {
+              q_target_snapshot = robot_state.q;
             }
             // First-order IIR low-pass to absorb step jitter on q_target_ that
             // arrives at coarse rates (recorded data, replayer, IK at 30 Hz).
@@ -487,6 +565,7 @@ void FrankaPlugin::run() {
             }
             q_cmd = q_target_filtered_;
           }
+          previous_state = control_state_.load();
 
           // Rate-limit q_des towards q_cmd for safety
           for (size_t i = 0; i < 7; ++i) {

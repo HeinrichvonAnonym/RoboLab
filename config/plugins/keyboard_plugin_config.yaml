@@ -7,6 +7,7 @@
 
 cmd_topic: "franka/cartesian_dpose"
 next_record_topic: "next_record"
+trigger_topic: "trigger"
 
 linear_step: 0.005    # metres per press
 angular_step: 0.02    # radians per press
