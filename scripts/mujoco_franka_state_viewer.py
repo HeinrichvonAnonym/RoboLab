@@ -24,7 +24,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Lock
-from typing import Iterable
+from typing import Iterable, Optional
 
 
 ARM_JOINTS = [f"panda_joint{i}" for i in range(1, 8)]
@@ -396,11 +396,11 @@ def _gripper_width_from_joint(value: float, cfg: TopicConfig) -> float:
     return cfg.gripper_max_width + value * (cfg.gripper_closed_width - cfg.gripper_max_width)
 
 
-def _decode_robot_message(msg, cfg: TopicConfig) -> tuple[list[float], float]:
+def _decode_robot_message(msg, cfg: TopicConfig) -> tuple[list[float], Optional[float]]:
     q = [float(msg.joints[i].position) for i in range(min(7, len(msg.joints)))]
     if len(q) < 7:
         q.extend(cfg.arm_home[len(q) : 7])
-    width = cfg.gripper_max_width
+    width = None
     if len(msg.joints) >= 8:
         width = _gripper_width_from_joint(float(msg.joints[7].position), cfg)
     return q, width
@@ -524,9 +524,10 @@ def main() -> int:
         msg.ParseFromString(_payload_bytes(sample))
         q, width = _decode_robot_message(msg, cfg)
         with latest_lock:
+            gripper_width = latest.state.gripper_width if width is None else width
             latest.state = LatestRobotData(
                 q=q,
-                gripper_width=width,
+                gripper_width=gripper_width,
                 stamp=time.time(),
                 sequence=int(msg.sequence),
                 label=f"seq={int(msg.sequence)}",
@@ -537,9 +538,10 @@ def main() -> int:
         msg.ParseFromString(_payload_bytes(sample))
         q, width = _decode_robot_message(msg, cfg)
         with latest_lock:
+            gripper_width = latest.command.gripper_width if width is None else width
             latest.command = LatestRobotData(
                 q=q,
-                gripper_width=width,
+                gripper_width=gripper_width,
                 stamp=time.time(),
                 sequence=int(msg.sequence),
                 label=f"seq={int(msg.sequence)}",

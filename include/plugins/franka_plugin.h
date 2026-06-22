@@ -70,6 +70,7 @@ class FrankaPlugin : public Plugin {
   void reset_control_session(const franka::RobotState& robot_state);
   void enter_inference_from_control(const franka::RobotState& robot_state);
   static const char* control_state_name(ControlState state);
+  void gripper_state_loop();
   void gripper_action_loop();
   void gripper_interrupt_loop();
   void stop_gripper_worker();
@@ -92,6 +93,7 @@ class FrankaPlugin : public Plugin {
   double gripper_closed_width_{0.0};
   double gripper_speed_{0.1};
   double gripper_close_threshold_{0.5};
+  std::thread gripper_state_thread_;
   std::thread gripper_action_thread_;
   std::thread gripper_interrupt_thread_;
   std::mutex gripper_mutex_;
@@ -102,6 +104,8 @@ class FrankaPlugin : public Plugin {
   bool gripper_target_closed_{false};
   bool gripper_move_in_progress_{false};
   bool gripper_active_closed_{false};
+  bool has_gripper_state_{false};
+  double gripper_state_width_{0.08};
   double gripper_target_close_norm_{0.0};
   uint64_t gripper_target_seq_{0};
   uint64_t gripper_active_seq_{0};

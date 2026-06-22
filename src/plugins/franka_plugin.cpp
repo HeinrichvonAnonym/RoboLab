@@ -359,6 +359,38 @@ void FrankaPlugin::cmd_subscriber_callback(const std::string& key, const std::st
   }
 }
 
+void FrankaPlugin::gripper_state_loop() {
+  while (true) {
+    {
+      std::lock_guard<std::mutex> lock(gripper_mutex_);
+      if (gripper_stop_) {
+        break;
+      }
+    }
+
+    try {
+      if (gripper_) {
+        const franka::GripperState state = gripper_->readOnce();
+        {
+          std::lock_guard<std::mutex> lock(gripper_mutex_);
+          gripper_state_width_ = state.width;
+          has_gripper_state_ = true;
+        }
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    } catch (const std::exception& e) {
+      {
+        std::lock_guard<std::mutex> lock(gripper_mutex_);
+        if (gripper_stop_) {
+          break;
+        }
+      }
+      std::cerr << "franka_plugin: gripper state read failed: " << e.what() << '\n';
+      std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+  }
+}
+
 void FrankaPlugin::gripper_action_loop() {
   uint64_t handled_seq = 0;
   while (true) {
@@ -474,6 +506,9 @@ void FrankaPlugin::stop_gripper_worker() {
   if (gripper_action_thread_.joinable()) {
     gripper_action_thread_.join();
   }
+  if (gripper_state_thread_.joinable()) {
+    gripper_state_thread_.join();
+  }
 }
 
 bool FrankaPlugin::go_home_cmd(const franka::RobotState& robot_state, std::array<double, 7>& q_cmd) {
@@ -525,11 +560,14 @@ void FrankaPlugin::run() {
     return;
   }
   if (enable_gripper_ && gripper_ && !gripper_action_thread_.joinable() &&
-      !gripper_interrupt_thread_.joinable()) {
+      !gripper_interrupt_thread_.joinable() && !gripper_state_thread_.joinable()) {
     {
       std::lock_guard<std::mutex> lock(gripper_mutex_);
       gripper_stop_ = false;
+      has_gripper_state_ = false;
+      gripper_state_width_ = gripper_max_width_;
     }
+    gripper_state_thread_ = std::thread(&FrankaPlugin::gripper_state_loop, this);
     gripper_action_thread_ = std::thread(&FrankaPlugin::gripper_action_loop, this);
     gripper_interrupt_thread_ = std::thread(&FrankaPlugin::gripper_interrupt_loop, this);
   }
@@ -678,6 +716,26 @@ bool FrankaPlugin::publish_state(const franka::RobotState& robot_state) {
       joint->set_position(robot_state.q[i]);
       joint->set_velocity(robot_state.dq[i]);
       joint->set_effort(robot_state.tau_J[i]);
+    }
+    if (enable_gripper_) {
+      bool has_gripper_state = false;
+      double gripper_width = gripper_max_width_;
+      {
+        std::lock_guard<std::mutex> lock(gripper_mutex_);
+        has_gripper_state = has_gripper_state_;
+        gripper_width = gripper_state_width_;
+      }
+      if (has_gripper_state) {
+        const double width_range = gripper_max_width_ - gripper_closed_width_;
+        const double gripper_close_norm =
+            width_range > 1e-9
+                ? clamp_double((gripper_max_width_ - gripper_width) / width_range, 0.0, 1.0)
+                : 0.0;
+        auto* joint = obs.add_joints();
+        joint->set_position(gripper_close_norm);
+        joint->set_velocity(0.0);
+        joint->set_effort(0.0);
+      }
     }
     obs.set_sys_time(robot_state.time.toSec());
     // obs.set_sequence(state_sequence_++);

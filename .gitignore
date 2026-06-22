@@ -32,4 +32,5 @@ __pycache__/
 ros_ws/build
 ros_ws/devel
 *.h5
+data
 
