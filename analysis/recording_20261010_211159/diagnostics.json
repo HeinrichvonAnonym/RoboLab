@@ -1,0 +1,1306 @@
+{
+  "source": "data/recording_20261010_211159_1791637919729.h5",
+  "source_size_bytes": 6690563256,
+  "timezone": "Asia/Shanghai",
+  "time_basis": "recorder receive timestamps_ns; not float32 sys_time",
+  "state_machine_recorded": false,
+  "joint_limits_rad": [
+    [
+      -2.8973,
+      2.8973
+    ],
+    [
+      -1.7628,
+      1.7628
+    ],
+    [
+      -2.8973,
+      2.8973
+    ],
+    [
+      -3.0718,
+      -0.0698
+    ],
+    [
+      -2.8973,
+      2.8973
+    ],
+    [
+      -0.0175,
+      3.7525
+    ],
+    [
+      -2.8973,
+      2.8973
+    ]
+  ],
+  "audit": {
+    "franka_command": {
+      "timestamps_ns": {
+        "shape": [
+          3288
+        ],
+        "dtype": "int64",
+        "validated_chunks": 7,
+        "recovered_chunks": [
+          {
+            "rows": [
+              3038,
+              3288
+            ],
+            "offset": 6525127584,
+            "bytes": 3472,
+            "error": "Can't synchronously read data (addr overflow, addr = 6525127584, size = 3472, eoa = 6525127584)"
+          }
+        ],
+        "finite": true
+      },
+      "sequence": {
+        "shape": [
+          3288
+        ],
+        "dtype": "uint32",
+        "validated_chunks": 7,
+        "recovered_chunks": [
+          {
+            "rows": [
+              3038,
+              3288
+            ],
+            "offset": 6525132792,
+            "bytes": 1736,
+            "error": "Can't synchronously read data (addr overflow, addr = 6525132792, size = 1736, eoa = 6525127584)"
+          }
+        ],
+        "finite": true
+      },
+      "type": {
+        "shape": [
+          3288
+        ],
+        "dtype": "uint32",
+        "validated_chunks": 7,
+        "recovered_chunks": [
+          {
+            "rows": [
+              3038,
+              3288
+            ],
+            "offset": 6525131056,
+            "bytes": 1736,
+            "error": "Can't synchronously read data (addr overflow, addr = 6525131056, size = 1736, eoa = 6525127584)"
+          }
+        ],
+        "finite": true
+      },
+      "sys_time": {
+        "shape": [
+          3288
+        ],
+        "dtype": "float32",
+        "validated_chunks": 7,
+        "recovered_chunks": [
+          {
+            "rows": [
+              3038,
+              3288
+            ],
+            "offset": 6525134528,
+            "bytes": 1736,
+            "error": "Can't synchronously read data (addr overflow, addr = 6525134528, size = 1736, eoa = 6525127584)"
+          }
+        ],
+        "finite": true
+      },
+      "joints_position": {
+        "shape": [
+          3288,
+          8
+        ],
+        "dtype": "float64",
+        "validated_chunks": 11,
+        "recovered_chunks": [
+          {
+            "rows": [
+              2816,
+              3072
+            ],
+            "offset": 6525136264,
+            "bytes": 16384,
+            "error": "Can't synchronously read data (addr overflow, addr = 6525136264, size = 16384, eoa = 6525127584)"
+          },
+          {
+            "rows": [
+              3072,
+              3288
+            ],
+            "offset": 6525152648,
+            "bytes": 16384,
+            "error": "Can't synchronously read data (addr overflow, addr = 6525152648, size = 16384, eoa = 6525127584)"
+          }
+        ],
+        "finite": true
+      },
+      "joints_velocity": {
+        "shape": [
+          3288,
+          8
+        ],
+        "dtype": "float64",
+        "validated_chunks": 11,
+        "recovered_chunks": [
+          {
+            "rows": [
+              2816,
+              3072
+            ],
+            "offset": 6525169032,
+            "bytes": 16384,
+            "error": "Can't synchronously read data (addr overflow, addr = 6525169032, size = 16384, eoa = 6525127584)"
+          },
+          {
+            "rows": [
+              3072,
+              3288
+            ],
+            "offset": 6525185416,
+            "bytes": 16384,
+            "error": "Can't synchronously read data (addr overflow, addr = 6525185416, size = 16384, eoa = 6525127584)"
+          }
+        ],
+        "finite": true
+      },
+      "joints_effort": {
+        "shape": [
+          3288,
+          8
+        ],
+        "dtype": "float64",
+        "validated_chunks": 11,
+        "recovered_chunks": [
+          {
+            "rows": [
+              2816,
+              3072
+            ],
+            "offset": 6525201800,
+            "bytes": 16384,
+            "error": "Can't synchronously read data (addr overflow, addr = 6525201800, size = 16384, eoa = 6525127584)"
+          },
+          {
+            "rows": [
+              3072,
+              3288
+            ],
+            "offset": 6525218184,
+            "bytes": 16384,
+            "error": "Can't synchronously read data (addr overflow, addr = 6525218184, size = 16384, eoa = 6525127584)"
+          }
+        ],
+        "finite": true
+      }
+    },
+    "franka_state": {
+      "timestamps_ns": {
+        "shape": [
+          7415
+        ],
+        "dtype": "int64",
+        "validated_chunks": 7,
+        "recovered_chunks": [
+          {
+            "rows": [
+              7000,
+              7415
+            ],
+            "offset": 6525234568,
+            "bytes": 8000,
+            "error": "Can't synchronously read data (addr overflow, addr = 6525234568, size = 8000, eoa = 6525127584)"
+          }
+        ],
+        "finite": true
+      },
+      "sequence": {
+        "shape": [
+          7415
+        ],
+        "dtype": "uint32",
+        "validated_chunks": 7,
+        "recovered_chunks": [
+          {
+            "rows": [
+              7000,
+              7415
+            ],
+            "offset": 6525246568,
+            "bytes": 4000,
+            "error": "Can't synchronously read data (addr overflow, addr = 6525246568, size = 4000, eoa = 6525127584)"
+          }
+        ],
+        "finite": true
+      },
+      "type": {
+        "shape": [
+          7415
+        ],
+        "dtype": "uint32",
+        "validated_chunks": 7,
+        "recovered_chunks": [
+          {
+            "rows": [
+              7000,
+              7415
+            ],
+            "offset": 6525242568,
+            "bytes": 4000,
+            "error": "Can't synchronously read data (addr overflow, addr = 6525242568, size = 4000, eoa = 6525127584)"
+          }
+        ],
+        "finite": true
+      },
+      "sys_time": {
+        "shape": [
+          7415
+        ],
+        "dtype": "float32",
+        "validated_chunks": 7,
+        "recovered_chunks": [
+          {
+            "rows": [
+              7000,
+              7415
+            ],
+            "offset": 6525250568,
+            "bytes": 4000,
+            "error": "Can't synchronously read data (addr overflow, addr = 6525250568, size = 4000, eoa = 6525127584)"
+          }
+        ],
+        "finite": true
+      },
+      "joints_position": {
+        "shape": [
+          7415,
+          8
+        ],
+        "dtype": "float64",
+        "validated_chunks": 28,
+        "recovered_chunks": [
+          {
+            "rows": [
+              7168,
+              7415
+            ],
+            "offset": 6525295528,
+            "bytes": 16384,
+            "error": "Can't synchronously read data (addr overflow, addr = 6525295528, size = 16384, eoa = 6525127584)"
+          }
+        ],
+        "finite": true
+      },
+      "joints_velocity": {
+        "shape": [
+          7415,
+          8
+        ],
+        "dtype": "float64",
+        "validated_chunks": 28,
+        "recovered_chunks": [
+          {
+            "rows": [
+              7168,
+              7415
+            ],
+            "offset": 6525311912,
+            "bytes": 16384,
+            "error": "Can't synchronously read data (addr overflow, addr = 6525311912, size = 16384, eoa = 6525127584)"
+          }
+        ],
+        "finite": true
+      },
+      "joints_effort": {
+        "shape": [
+          7415,
+          8
+        ],
+        "dtype": "float64",
+        "validated_chunks": 28,
+        "recovered_chunks": [
+          {
+            "rows": [
+              7168,
+              7415
+            ],
+            "offset": 6525328296,
+            "bytes": 16384,
+            "error": "Can't synchronously read data (addr overflow, addr = 6525328296, size = 16384, eoa = 6525127584)"
+          }
+        ],
+        "finite": true
+      }
+    }
+  },
+  "profiles": {
+    "franka_command": {
+      "samples": 3288,
+      "first_time": "2026-10-10T21:14:28.381+08:00",
+      "last_time": "2026-10-10T21:16:39.321+08:00",
+      "duration_s": 130.939709318,
+      "dt_quantiles_s": [
+        0.033344452,
+        0.039986037,
+        0.0423889064,
+        0.053897987
+      ],
+      "nonpositive_dt": 0,
+      "duplicate_timestamps": 0,
+      "sequence_step_counts": {
+        "3": 94,
+        "4": 3153,
+        "5": 40
+      },
+      "types": {
+        "2": 3288
+      },
+      "first_q": [
+        0.36662140830466816,
+        -0.0337475773334841,
+        5.984059053541886,
+        -1.8223691760081417,
+        -0.14419419406125034,
+        2.0125827937059615,
+        0.06902913545485401,
+        0.0
+      ],
+      "last_q": [
+        -0.13192449533128978,
+        0.36662094811041646,
+        6.025476534814798,
+        -2.1260973720094967,
+        -0.5307568924141769,
+        2.04172842867579,
+        0.3742865569036328,
+        0.0
+      ],
+      "min_q": [
+        -2.6016314162540475,
+        -0.7378447589728399,
+        4.261398631814273,
+        -2.552544031041707,
+        -0.7086991238037487,
+        0.9786797426711924,
+        -0.8130067496177866,
+        0.0
+      ],
+      "max_q": [
+        1.1612234563834105,
+        0.49547579448706225,
+        6.525554271665518,
+        -1.468019614144617,
+        0.4893398713201797,
+        2.7933788613416732,
+        1.1320778213982439,
+        0.42805979957216916
+      ],
+      "max_abs_step_rad": [
+        0.2399662903776575,
+        0.11351446506507565,
+        0.21626981229288145,
+        0.10023966196316114,
+        0.0941632572662355,
+        0.2262983681595192,
+        0.13192221698630358,
+        0.32226530282970595
+      ],
+      "outside_limits_count": [
+        0,
+        0,
+        3288,
+        0,
+        0,
+        0,
+        0
+      ],
+      "large_steps": {
+        "1": [
+          {
+            "index_before": 1294,
+            "time_before": "2026-10-10T21:15:19.851+08:00",
+            "time_after": "2026-10-10T21:15:19.891+08:00",
+            "dt_s": 0.039955316,
+            "from_rad": 0.2561537760401064,
+            "to_rad": 0.4961200664177639,
+            "step_rad": 0.2399662903776575,
+            "sequence_before": 5148,
+            "sequence_after": 5152
+          },
+          {
+            "index_before": 1293,
+            "time_before": "2026-10-10T21:15:19.811+08:00",
+            "time_after": "2026-10-10T21:15:19.851+08:00",
+            "dt_s": 0.040167903,
+            "from_rad": 0.04601927637441354,
+            "to_rad": 0.2561537760401064,
+            "step_rad": 0.21013449966569286,
+            "sequence_before": 5144,
+            "sequence_after": 5148
+          },
+          {
+            "index_before": 2727,
+            "time_before": "2026-10-10T21:16:17.016+08:00",
+            "time_after": "2026-10-10T21:16:17.052+08:00",
+            "dt_s": 0.035619434,
+            "from_rad": -1.1106019308952022,
+            "to_rad": -1.2915937224264111,
+            "step_rad": -0.18099179153120892,
+            "sequence_before": 10864,
+            "sequence_after": 10868
+          },
+          {
+            "index_before": 1337,
+            "time_before": "2026-10-10T21:15:21.561+08:00",
+            "time_after": "2026-10-10T21:15:21.601+08:00",
+            "dt_s": 0.039963057,
+            "from_rad": 0.8206797215330841,
+            "to_rad": 0.6488738749936845,
+            "step_rad": -0.17180584653939956,
+            "sequence_before": 5319,
+            "sequence_after": 5323
+          },
+          {
+            "index_before": 2728,
+            "time_before": "2026-10-10T21:16:17.052+08:00",
+            "time_after": "2026-10-10T21:16:17.091+08:00",
+            "dt_s": 0.039455372,
+            "from_rad": -1.2915937224264111,
+            "to_rad": -1.4632182541402954,
+            "step_rad": -0.17162453171388425,
+            "sequence_before": 10868,
+            "sequence_after": 10872
+          }
+        ],
+        "2": [
+          {
+            "index_before": 1061,
+            "time_before": "2026-10-10T21:15:10.591+08:00",
+            "time_after": "2026-10-10T21:15:10.631+08:00",
+            "dt_s": 0.040151783,
+            "from_rad": -0.23623304105827217,
+            "to_rad": -0.3497475061233478,
+            "step_rad": -0.11351446506507565,
+            "sequence_before": 4222,
+            "sequence_after": 4226
+          },
+          {
+            "index_before": 1492,
+            "time_before": "2026-10-10T21:15:27.736+08:00",
+            "time_after": "2026-10-10T21:15:27.771+08:00",
+            "dt_s": 0.035776475,
+            "from_rad": -0.4356416466709518,
+            "to_rad": -0.533815496707072,
+            "step_rad": -0.09817385003612017,
+            "sequence_before": 5936,
+            "sequence_after": 5940
+          },
+          {
+            "index_before": 1491,
+            "time_before": "2026-10-10T21:15:27.691+08:00",
+            "time_after": "2026-10-10T21:15:27.736+08:00",
+            "dt_s": 0.044210091,
+            "from_rad": -0.34667959363496187,
+            "to_rad": -0.4356416466709518,
+            "step_rad": -0.08896205303598992,
+            "sequence_before": 5932,
+            "sequence_after": 5936
+          },
+          {
+            "index_before": 3219,
+            "time_before": "2026-10-10T21:16:36.592+08:00",
+            "time_after": "2026-10-10T21:16:36.634+08:00",
+            "dt_s": 0.041786861,
+            "from_rad": 0.15033702012633865,
+            "to_rad": 0.06832350429249548,
+            "step_rad": -0.08201351583384317,
+            "sequence_before": 12822,
+            "sequence_after": 12826
+          },
+          {
+            "index_before": 1067,
+            "time_before": "2026-10-10T21:15:10.831+08:00",
+            "time_after": "2026-10-10T21:15:10.871+08:00",
+            "dt_s": 0.040013212,
+            "from_rad": -0.46326214271815513,
+            "to_rad": -0.5414951398906107,
+            "step_rad": -0.07823299717245558,
+            "sequence_before": 4246,
+            "sequence_after": 4250
+          }
+        ],
+        "3": [
+          {
+            "index_before": 1293,
+            "time_before": "2026-10-10T21:15:19.811+08:00",
+            "time_after": "2026-10-10T21:15:19.851+08:00",
+            "dt_s": 0.040167903,
+            "from_rad": 5.895088318174636,
+            "to_rad": 5.678818505881755,
+            "step_rad": -0.21626981229288145,
+            "sequence_before": 5144,
+            "sequence_after": 5148
+          },
+          {
+            "index_before": 1294,
+            "time_before": "2026-10-10T21:15:19.851+08:00",
+            "time_after": "2026-10-10T21:15:19.891+08:00",
+            "dt_s": 0.039955316,
+            "from_rad": 5.678818505881755,
+            "to_rad": 5.467705780531917,
+            "step_rad": -0.21111272534983794,
+            "sequence_before": 5148,
+            "sequence_after": 5152
+          },
+          {
+            "index_before": 1338,
+            "time_before": "2026-10-10T21:15:21.601+08:00",
+            "time_after": "2026-10-10T21:15:21.641+08:00",
+            "dt_s": 0.04007007,
+            "from_rad": 5.148039522579551,
+            "to_rad": 5.3336510138666995,
+            "step_rad": 0.1856114912871485,
+            "sequence_before": 5323,
+            "sequence_after": 5327
+          },
+          {
+            "index_before": 2727,
+            "time_before": "2026-10-10T21:16:17.016+08:00",
+            "time_after": "2026-10-10T21:16:17.052+08:00",
+            "dt_s": 0.035619434,
+            "from_rad": 4.580466477694465,
+            "to_rad": 4.762992092013539,
+            "step_rad": 0.18252561431907388,
+            "sequence_before": 10864,
+            "sequence_after": 10868
+          },
+          {
+            "index_before": 2728,
+            "time_before": "2026-10-10T21:16:17.052+08:00",
+            "time_after": "2026-10-10T21:16:17.091+08:00",
+            "dt_s": 0.039455372,
+            "from_rad": 4.762992092013539,
+            "to_rad": 4.937654059085514,
+            "step_rad": 0.1746619670719749,
+            "sequence_before": 10868,
+            "sequence_after": 10872
+          }
+        ],
+        "4": [
+          {
+            "index_before": 1021,
+            "time_before": "2026-10-10T21:15:08.991+08:00",
+            "time_after": "2026-10-10T21:15:09.031+08:00",
+            "dt_s": 0.039995672,
+            "from_rad": -1.8239125140788341,
+            "to_rad": -1.723672852115673,
+            "step_rad": 0.10023966196316114,
+            "sequence_before": 4062,
+            "sequence_after": 4066
+          },
+          {
+            "index_before": 1066,
+            "time_before": "2026-10-10T21:15:10.791+08:00",
+            "time_after": "2026-10-10T21:15:10.831+08:00",
+            "dt_s": 0.039868927,
+            "from_rad": -2.1138255247860256,
+            "to_rad": -2.2089322394485147,
+            "step_rad": -0.0951067146624891,
+            "sequence_before": 4242,
+            "sequence_after": 4246
+          },
+          {
+            "index_before": 1020,
+            "time_before": "2026-10-10T21:15:08.951+08:00",
+            "time_after": "2026-10-10T21:15:08.991+08:00",
+            "dt_s": 0.040106567,
+            "from_rad": -1.9174760600221101,
+            "to_rad": -1.8239125140788341,
+            "step_rad": 0.09356354594327598,
+            "sequence_before": 4058,
+            "sequence_after": 4062
+          },
+          {
+            "index_before": 1065,
+            "time_before": "2026-10-10T21:15:10.752+08:00",
+            "time_after": "2026-10-10T21:15:10.791+08:00",
+            "dt_s": 0.039392881,
+            "from_rad": -2.021786678428366,
+            "to_rad": -2.1138255247860256,
+            "step_rad": -0.09203884635765958,
+            "sequence_before": 4238,
+            "sequence_after": 4242
+          },
+          {
+            "index_before": 1067,
+            "time_before": "2026-10-10T21:15:10.831+08:00",
+            "time_after": "2026-10-10T21:15:10.871+08:00",
+            "dt_s": 0.040013212,
+            "from_rad": -2.2089322394485147,
+            "to_rad": -2.297903131281804,
+            "step_rad": -0.08897089183328921,
+            "sequence_before": 4246,
+            "sequence_after": 4250
+          }
+        ],
+        "5": [
+          {
+            "index_before": 675,
+            "time_before": "2026-10-10T21:14:55.242+08:00",
+            "time_after": "2026-10-10T21:14:55.281+08:00",
+            "dt_s": 0.039022576,
+            "from_rad": -0.11810900416130457,
+            "to_rad": -0.21227226142754008,
+            "step_rad": -0.0941632572662355,
+            "sequence_before": 2687,
+            "sequence_after": 2691
+          },
+          {
+            "index_before": 677,
+            "time_before": "2026-10-10T21:14:55.321+08:00",
+            "time_after": "2026-10-10T21:14:55.361+08:00",
+            "dt_s": 0.039870551,
+            "from_rad": -0.21322332950659367,
+            "to_rad": -0.29145634891594163,
+            "step_rad": -0.07823301940934796,
+            "sequence_before": 2695,
+            "sequence_after": 2699
+          },
+          {
+            "index_before": 1029,
+            "time_before": "2026-10-10T21:15:09.311+08:00",
+            "time_after": "2026-10-10T21:15:09.351+08:00",
+            "dt_s": 0.03996094,
+            "from_rad": 0.12732040538867917,
+            "to_rad": 0.20555342479434557,
+            "step_rad": 0.0782330194056664,
+            "sequence_before": 4094,
+            "sequence_after": 4098
+          },
+          {
+            "index_before": 1293,
+            "time_before": "2026-10-10T21:15:19.811+08:00",
+            "time_after": "2026-10-10T21:15:19.851+08:00",
+            "dt_s": 0.040167903,
+            "from_rad": 0.003068024468983466,
+            "to_rad": -0.07515723530437748,
+            "step_rad": -0.07822525977336095,
+            "sequence_before": 5144,
+            "sequence_after": 5148
+          },
+          {
+            "index_before": 674,
+            "time_before": "2026-10-10T21:14:55.201+08:00",
+            "time_after": "2026-10-10T21:14:55.242+08:00",
+            "dt_s": 0.041004891,
+            "from_rad": -0.042948547497300954,
+            "to_rad": -0.11810900416130457,
+            "step_rad": -0.07516045666400362,
+            "sequence_before": 2683,
+            "sequence_after": 2687
+          }
+        ],
+        "6": [
+          {
+            "index_before": 3219,
+            "time_before": "2026-10-10T21:16:36.592+08:00",
+            "time_after": "2026-10-10T21:16:36.634+08:00",
+            "dt_s": 0.041786861,
+            "from_rad": 1.7963123647528025,
+            "to_rad": 1.5700139965932833,
+            "step_rad": -0.2262983681595192,
+            "sequence_before": 12822,
+            "sequence_after": 12826
+          },
+          {
+            "index_before": 3218,
+            "time_before": "2026-10-10T21:16:36.555+08:00",
+            "time_after": "2026-10-10T21:16:36.592+08:00",
+            "dt_s": 0.036480438,
+            "from_rad": 2.0049130508345154,
+            "to_rad": 1.7963123647528025,
+            "step_rad": -0.2086006860817129,
+            "sequence_before": 12818,
+            "sequence_after": 12822
+          },
+          {
+            "index_before": 3220,
+            "time_before": "2026-10-10T21:16:36.634+08:00",
+            "time_after": "2026-10-10T21:16:36.671+08:00",
+            "dt_s": 0.037913352,
+            "from_rad": 1.5700139965932833,
+            "to_rad": 1.3900473705811878,
+            "step_rad": -0.17996662601209557,
+            "sequence_before": 12826,
+            "sequence_after": 12830
+          },
+          {
+            "index_before": 3217,
+            "time_before": "2026-10-10T21:16:36.512+08:00",
+            "time_after": "2026-10-10T21:16:36.555+08:00",
+            "dt_s": 0.043145341,
+            "from_rad": 2.1659808738290884,
+            "to_rad": 2.0049130508345154,
+            "step_rad": -0.161067822994573,
+            "sequence_before": 12814,
+            "sequence_after": 12818
+          },
+          {
+            "index_before": 3216,
+            "time_before": "2026-10-10T21:16:36.472+08:00",
+            "time_after": "2026-10-10T21:16:36.512+08:00",
+            "dt_s": 0.040545668,
+            "from_rad": 2.299437201049167,
+            "to_rad": 2.1659808738290884,
+            "step_rad": -0.13345632722007839,
+            "sequence_before": 12810,
+            "sequence_after": 12814
+          }
+        ],
+        "7": [
+          {
+            "index_before": 1025,
+            "time_before": "2026-10-10T21:15:09.151+08:00",
+            "time_after": "2026-10-10T21:15:09.192+08:00",
+            "dt_s": 0.040174403,
+            "from_rad": 0.8038059340025617,
+            "to_rad": 0.6718837170162582,
+            "step_rad": -0.13192221698630358,
+            "sequence_before": 4078,
+            "sequence_after": 4082
+          },
+          {
+            "index_before": 1026,
+            "time_before": "2026-10-10T21:15:09.192+08:00",
+            "time_after": "2026-10-10T21:15:09.231+08:00",
+            "dt_s": 0.039880056,
+            "from_rad": 0.6718837170162582,
+            "to_rad": 0.5507112212991709,
+            "step_rad": -0.12117249571708721,
+            "sequence_before": 4082,
+            "sequence_after": 4086
+          },
+          {
+            "index_before": 1024,
+            "time_before": "2026-10-10T21:15:09.111+08:00",
+            "time_after": "2026-10-10T21:15:09.151+08:00",
+            "dt_s": 0.040235061,
+            "from_rad": 0.9188544929405864,
+            "to_rad": 0.8038059340025617,
+            "step_rad": -0.11504855893802468,
+            "sequence_before": 4074,
+            "sequence_after": 4078
+          },
+          {
+            "index_before": 2420,
+            "time_before": "2026-10-10T21:16:04.781+08:00",
+            "time_after": "2026-10-10T21:16:04.821+08:00",
+            "dt_s": 0.03983576,
+            "from_rad": -0.08897088483833754,
+            "to_rad": -0.19481555900302974,
+            "step_rad": -0.1058446741646922,
+            "sequence_before": 9641,
+            "sequence_after": 9645
+          },
+          {
+            "index_before": 1407,
+            "time_before": "2026-10-10T21:15:24.341+08:00",
+            "time_after": "2026-10-10T21:15:24.382+08:00",
+            "dt_s": 0.040737986,
+            "from_rad": -0.45866025652887504,
+            "to_rad": -0.3589515053623271,
+            "step_rad": 0.09970875116654793,
+            "sequence_before": 5597,
+            "sequence_after": 5601
+          }
+        ]
+      }
+    },
+    "franka_state": {
+      "samples": 7415,
+      "first_time": "2026-10-10T21:11:18.302+08:00",
+      "last_time": "2026-10-10T21:16:39.183+08:00",
+      "duration_s": 320.880817704,
+      "dt_quantiles_s": [
+        0.033706823,
+        0.041195555,
+        0.0539907204,
+        0.238500667
+      ],
+      "nonpositive_dt": 0,
+      "duplicate_timestamps": 0,
+      "sequence_step_counts": {
+        "0": 7414
+      },
+      "types": {
+        "2": 7415
+      },
+      "first_q": [
+        -0.3281593550414874,
+        -0.885589740125759,
+        0.132909229082577,
+        -2.7465866956374865,
+        0.18797793459892545,
+        1.9525843319632887,
+        0.5001180675707283,
+        0.0
+      ],
+      "last_q": [
+        -1.5777574590013066,
+        -0.02445794376633509,
+        2.9048841699257233,
+        -1.8618288676235253,
+        -0.4504009149455789,
+        2.5350692251170117,
+        -0.10426880185565213,
+        0.0
+      ],
+      "min_q": [
+        -1.5855811208413393,
+        -0.8870355538206491,
+        -0.03221847523030322,
+        -2.746841367688095,
+        -0.4505280421972275,
+        1.4980007551513408,
+        -0.11070864050043748,
+        0.0
+      ],
+      "max_q": [
+        0.6889549710344026,
+        -0.0208003424420716,
+        2.9050837789882067,
+        -1.4548979925954997,
+        0.2679305870223355,
+        2.5353854257268926,
+        1.3668142981105615,
+        0.0
+      ],
+      "max_abs_step_rad": [
+        0.03023971352809398,
+        0.029600609780394527,
+        0.05055669315429445,
+        0.04203749239546051,
+        0.032868599454988115,
+        0.04425395212366179,
+        0.08203799970679748,
+        0.0
+      ],
+      "outside_limits_count": [
+        0,
+        0,
+        203,
+        0,
+        0,
+        0,
+        0
+      ],
+      "large_steps": {
+        "1": [
+          {
+            "index_before": 5371,
+            "time_before": "2026-10-10T21:15:06.324+08:00",
+            "time_after": "2026-10-10T21:15:06.380+08:00",
+            "dt_s": 0.055955958,
+            "from_rad": -0.032208021692663,
+            "to_rad": -0.06244773522075698,
+            "step_rad": -0.03023971352809398,
+            "sequence_before": 0,
+            "sequence_after": 0
+          },
+          {
+            "index_before": 5370,
+            "time_before": "2026-10-10T21:15:06.270+08:00",
+            "time_after": "2026-10-10T21:15:06.324+08:00",
+            "dt_s": 0.054031813,
+            "from_rad": -0.00592608333417315,
+            "to_rad": -0.032208021692663,
+            "step_rad": -0.02628193835848985,
+            "sequence_before": 0,
+            "sequence_after": 0
+          },
+          {
+            "index_before": 5286,
+            "time_before": "2026-10-10T21:15:01.483+08:00",
+            "time_after": "2026-10-10T21:15:01.538+08:00",
+            "dt_s": 0.054624624,
+            "from_rad": 0.2811024898789344,
+            "to_rad": 0.25491722643468484,
+            "step_rad": -0.02618526344424954,
+            "sequence_before": 0,
+            "sequence_after": 0
+          },
+          {
+            "index_before": 5285,
+            "time_before": "2026-10-10T21:15:01.429+08:00",
+            "time_after": "2026-10-10T21:15:01.483+08:00",
+            "dt_s": 0.053879009,
+            "from_rad": 0.3068493204676117,
+            "to_rad": 0.2811024898789344,
+            "step_rad": -0.025746830588677327,
+            "sequence_before": 0,
+            "sequence_after": 0
+          },
+          {
+            "index_before": 5287,
+            "time_before": "2026-10-10T21:15:01.538+08:00",
+            "time_after": "2026-10-10T21:15:01.589+08:00",
+            "dt_s": 0.051707091,
+            "from_rad": 0.25491722643468484,
+            "to_rad": 0.23071471511571828,
+            "step_rad": -0.024202511318966557,
+            "sequence_before": 0,
+            "sequence_after": 0
+          }
+        ],
+        "2": [
+          {
+            "index_before": 5319,
+            "time_before": "2026-10-10T21:15:03.402+08:00",
+            "time_after": "2026-10-10T21:15:03.455+08:00",
+            "dt_s": 0.053928901,
+            "from_rad": -0.3770772635393939,
+            "to_rad": -0.40667787331978844,
+            "step_rad": -0.029600609780394527,
+            "sequence_before": 0,
+            "sequence_after": 0
+          },
+          {
+            "index_before": 5318,
+            "time_before": "2026-10-10T21:15:03.348+08:00",
+            "time_after": "2026-10-10T21:15:03.402+08:00",
+            "dt_s": 0.053044399,
+            "from_rad": -0.3479876759359151,
+            "to_rad": -0.3770772635393939,
+            "step_rad": -0.029089587603478795,
+            "sequence_before": 0,
+            "sequence_after": 0
+          },
+          {
+            "index_before": 5317,
+            "time_before": "2026-10-10T21:15:03.296+08:00",
+            "time_after": "2026-10-10T21:15:03.348+08:00",
+            "dt_s": 0.052833882,
+            "from_rad": -0.31895326306899885,
+            "to_rad": -0.3479876759359151,
+            "step_rad": -0.02903441286691627,
+            "sequence_before": 0,
+            "sequence_after": 0
+          },
+          {
+            "index_before": 5316,
+            "time_before": "2026-10-10T21:15:03.241+08:00",
+            "time_after": "2026-10-10T21:15:03.296+08:00",
+            "dt_s": 0.054292316,
+            "from_rad": -0.29044150915510003,
+            "to_rad": -0.31895326306899885,
+            "step_rad": -0.02851175391389882,
+            "sequence_before": 0,
+            "sequence_after": 0
+          },
+          {
+            "index_before": 5320,
+            "time_before": "2026-10-10T21:15:03.455+08:00",
+            "time_after": "2026-10-10T21:15:03.510+08:00",
+            "dt_s": 0.05426459,
+            "from_rad": -0.40667787331978844,
+            "to_rad": -0.4349788442025335,
+            "step_rad": -0.02830097088274508,
+            "sequence_before": 0,
+            "sequence_after": 0
+          }
+        ],
+        "3": [
+          {
+            "index_before": 5277,
+            "time_before": "2026-10-10T21:15:01.001+08:00",
+            "time_after": "2026-10-10T21:15:01.056+08:00",
+            "dt_s": 0.054465439,
+            "from_rad": 1.3354039656071817,
+            "to_rad": 1.2848472724528872,
+            "step_rad": -0.05055669315429445,
+            "sequence_before": 0,
+            "sequence_after": 0
+          },
+          {
+            "index_before": 5276,
+            "time_before": "2026-10-10T21:15:00.947+08:00",
+            "time_after": "2026-10-10T21:15:01.001+08:00",
+            "dt_s": 0.054544194,
+            "from_rad": 1.3852791031890457,
+            "to_rad": 1.3354039656071817,
+            "step_rad": -0.049875137581864015,
+            "sequence_before": 0,
+            "sequence_after": 0
+          },
+          {
+            "index_before": 5278,
+            "time_before": "2026-10-10T21:15:01.056+08:00",
+            "time_after": "2026-10-10T21:15:01.109+08:00",
+            "dt_s": 0.053245597,
+            "from_rad": 1.2848472724528872,
+            "to_rad": 1.2356703594841332,
+            "step_rad": -0.04917691296875404,
+            "sequence_before": 0,
+            "sequence_after": 0
+          },
+          {
+            "index_before": 5279,
+            "time_before": "2026-10-10T21:15:01.109+08:00",
+            "time_after": "2026-10-10T21:15:01.162+08:00",
+            "dt_s": 0.05305224,
+            "from_rad": 1.2356703594841332,
+            "to_rad": 1.1876819656648396,
+            "step_rad": -0.04798839381929354,
+            "sequence_before": 0,
+            "sequence_after": 0
+          },
+          {
+            "index_before": 5281,
+            "time_before": "2026-10-10T21:15:01.215+08:00",
+            "time_after": "2026-10-10T21:15:01.270+08:00",
+            "dt_s": 0.054857173,
+            "from_rad": 1.1402312967374089,
+            "to_rad": 1.0925477258187386,
+            "step_rad": -0.04768357091867026,
+            "sequence_before": 0,
+            "sequence_after": 0
+          }
+        ],
+        "4": [
+          {
+            "index_before": 5320,
+            "time_before": "2026-10-10T21:15:03.455+08:00",
+            "time_after": "2026-10-10T21:15:03.510+08:00",
+            "dt_s": 0.05426459,
+            "from_rad": -2.042033334255324,
+            "to_rad": -2.0840708266507844,
+            "step_rad": -0.04203749239546051,
+            "sequence_before": 0,
+            "sequence_after": 0
+          },
+          {
+            "index_before": 5319,
+            "time_before": "2026-10-10T21:15:03.402+08:00",
+            "time_after": "2026-10-10T21:15:03.455+08:00",
+            "dt_s": 0.053928901,
+            "from_rad": -2.000994306497646,
+            "to_rad": -2.042033334255324,
+            "step_rad": -0.04103902775767798,
+            "sequence_before": 0,
+            "sequence_after": 0
+          },
+          {
+            "index_before": 5270,
+            "time_before": "2026-10-10T21:15:00.628+08:00",
+            "time_after": "2026-10-10T21:15:00.682+08:00",
+            "dt_s": 0.053483355,
+            "from_rad": -1.7427355662202886,
+            "to_rad": -1.7021488963291163,
+            "step_rad": 0.04058666989117232,
+            "sequence_before": 0,
+            "sequence_after": 0
+          },
+          {
+            "index_before": 5321,
+            "time_before": "2026-10-10T21:15:03.510+08:00",
+            "time_after": "2026-10-10T21:15:03.563+08:00",
+            "dt_s": 0.053161066,
+            "from_rad": -2.0840708266507844,
+            "to_rad": -2.1239945314749744,
+            "step_rad": -0.039923704824190054,
+            "sequence_before": 0,
+            "sequence_after": 0
+          },
+          {
+            "index_before": 5322,
+            "time_before": "2026-10-10T21:15:03.563+08:00",
+            "time_after": "2026-10-10T21:15:03.618+08:00",
+            "dt_s": 0.05515097,
+            "from_rad": -2.1239945314749744,
+            "to_rad": -2.1637736100013036,
+            "step_rad": -0.039779078526329226,
+            "sequence_before": 0,
+            "sequence_after": 0
+          }
+        ],
+        "5": [
+          {
+            "index_before": 5309,
+            "time_before": "2026-10-10T21:15:02.864+08:00",
+            "time_after": "2026-10-10T21:15:02.917+08:00",
+            "dt_s": 0.053298636,
+            "from_rad": 0.04317909177727061,
+            "to_rad": 0.07604769123225873,
+            "step_rad": 0.032868599454988115,
+            "sequence_before": 0,
+            "sequence_after": 0
+          },
+          {
+            "index_before": 5310,
+            "time_before": "2026-10-10T21:15:02.917+08:00",
+            "time_after": "2026-10-10T21:15:02.972+08:00",
+            "dt_s": 0.05487578,
+            "from_rad": 0.07604769123225873,
+            "to_rad": 0.10684481906983134,
+            "step_rad": 0.030797127837572616,
+            "sequence_before": 0,
+            "sequence_after": 0
+          },
+          {
+            "index_before": 5308,
+            "time_before": "2026-10-10T21:15:02.811+08:00",
+            "time_after": "2026-10-10T21:15:02.864+08:00",
+            "dt_s": 0.052915121,
+            "from_rad": 0.013796212979958747,
+            "to_rad": 0.04317909177727061,
+            "step_rad": 0.029382878797311864,
+            "sequence_before": 0,
+            "sequence_after": 0
+          },
+          {
+            "index_before": 5307,
+            "time_before": "2026-10-10T21:15:02.755+08:00",
+            "time_after": "2026-10-10T21:15:02.811+08:00",
+            "dt_s": 0.055422099,
+            "from_rad": -0.012108746037631249,
+            "to_rad": 0.013796212979958747,
+            "step_rad": 0.025904959017589997,
+            "sequence_before": 0,
+            "sequence_after": 0
+          },
+          {
+            "index_before": 5319,
+            "time_before": "2026-10-10T21:15:03.402+08:00",
+            "time_after": "2026-10-10T21:15:03.455+08:00",
+            "dt_s": 0.053928901,
+            "from_rad": 0.1936711740828796,
+            "to_rad": 0.21707231887044254,
+            "step_rad": 0.023401144787562944,
+            "sequence_before": 0,
+            "sequence_after": 0
+          }
+        ],
+        "6": [
+          {
+            "index_before": 5274,
+            "time_before": "2026-10-10T21:15:00.840+08:00",
+            "time_after": "2026-10-10T21:15:00.893+08:00",
+            "dt_s": 0.053083611,
+            "from_rad": 1.779487109195881,
+            "to_rad": 1.7352331570722193,
+            "step_rad": -0.04425395212366179,
+            "sequence_before": 0,
+            "sequence_after": 0
+          },
+          {
+            "index_before": 5275,
+            "time_before": "2026-10-10T21:15:00.893+08:00",
+            "time_after": "2026-10-10T21:15:00.947+08:00",
+            "dt_s": 0.053220486,
+            "from_rad": 1.7352331570722193,
+            "to_rad": 1.6936896631271972,
+            "step_rad": -0.0415434939450221,
+            "sequence_before": 0,
+            "sequence_after": 0
+          },
+          {
+            "index_before": 5273,
+            "time_before": "2026-10-10T21:15:00.787+08:00",
+            "time_after": "2026-10-10T21:15:00.840+08:00",
+            "dt_s": 0.053249514,
+            "from_rad": 1.8184898888543843,
+            "to_rad": 1.779487109195881,
+            "step_rad": -0.039002779658503295,
+            "sequence_before": 0,
+            "sequence_after": 0
+          },
+          {
+            "index_before": 5276,
+            "time_before": "2026-10-10T21:15:00.947+08:00",
+            "time_after": "2026-10-10T21:15:01.001+08:00",
+            "dt_s": 0.054544194,
+            "from_rad": 1.6936896631271972,
+            "to_rad": 1.656938593826779,
+            "step_rad": -0.03675106930041805,
+            "sequence_before": 0,
+            "sequence_after": 0
+          },
+          {
+            "index_before": 5300,
+            "time_before": "2026-10-10T21:15:02.382+08:00",
+            "time_after": "2026-10-10T21:15:02.434+08:00",
+            "dt_s": 0.052122653,
+            "from_rad": 1.6679552936590238,
+            "to_rad": 1.7040608891545308,
+            "step_rad": 0.03610559549550696,
+            "sequence_before": 0,
+            "sequence_after": 0
+          }
+        ],
+        "7": [
+          {
+            "index_before": 5288,
+            "time_before": "2026-10-10T21:15:01.589+08:00",
+            "time_after": "2026-10-10T21:15:01.641+08:00",
+            "dt_s": 0.051858264,
+            "from_rad": 1.1631139065412115,
+            "to_rad": 1.081075906834414,
+            "step_rad": -0.08203799970679748,
+            "sequence_before": 0,
+            "sequence_after": 0
+          },
+          {
+            "index_before": 5287,
+            "time_before": "2026-10-10T21:15:01.538+08:00",
+            "time_after": "2026-10-10T21:15:01.589+08:00",
+            "dt_s": 0.051707091,
+            "from_rad": 1.235181113970014,
+            "to_rad": 1.1631139065412115,
+            "step_rad": -0.07206720742880246,
+            "sequence_before": 0,
+            "sequence_after": 0
+          },
+          {
+            "index_before": 5261,
+            "time_before": "2026-10-10T21:15:00.144+08:00",
+            "time_after": "2026-10-10T21:15:00.199+08:00",
+            "dt_s": 0.054201984,
+            "from_rad": 0.8275208830380847,
+            "to_rad": 0.8947973883001358,
+            "step_rad": 0.06727650526205109,
+            "sequence_before": 0,
+            "sequence_after": 0
+          },
+          {
+            "index_before": 5260,
+            "time_before": "2026-10-10T21:15:00.093+08:00",
+            "time_after": "2026-10-10T21:15:00.144+08:00",
+            "dt_s": 0.051748774,
+            "from_rad": 0.7625310427577968,
+            "to_rad": 0.8275208830380847,
+            "step_rad": 0.06498984028028787,
+            "sequence_before": 0,
+            "sequence_after": 0
+          },
+          {
+            "index_before": 5286,
+            "time_before": "2026-10-10T21:15:01.483+08:00",
+            "time_after": "2026-10-10T21:15:01.538+08:00",
+            "dt_s": 0.054624624,
+            "from_rad": 1.2929177219196883,
+            "to_rad": 1.235181113970014,
+            "step_rad": -0.05773660794967439,
+            "sequence_before": 0,
+            "sequence_after": 0
+          }
+        ]
+      }
+    }
+  }
+}

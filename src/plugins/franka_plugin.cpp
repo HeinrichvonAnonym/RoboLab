@@ -40,6 +40,62 @@ double clamp_double(double value, double low, double high) {
   return value;
 }
 
+void set_pose_from_transform(const std::array<double, 16>& transform, franka::Pose* pose) {
+  if (!pose) {
+    return;
+  }
+
+  pose->mutable_pos()->set_x(transform[12]);
+  pose->mutable_pos()->set_y(transform[13]);
+  pose->mutable_pos()->set_z(transform[14]);
+
+  const double r00 = transform[0];
+  const double r01 = transform[4];
+  const double r02 = transform[8];
+  const double r10 = transform[1];
+  const double r11 = transform[5];
+  const double r12 = transform[9];
+  const double r20 = transform[2];
+  const double r21 = transform[6];
+  const double r22 = transform[10];
+
+  double qw = 1.0;
+  double qx = 0.0;
+  double qy = 0.0;
+  double qz = 0.0;
+  const double trace = r00 + r11 + r22;
+  if (trace > 0.0) {
+    const double s = std::sqrt(trace + 1.0) * 2.0;
+    qw = 0.25 * s;
+    qx = (r21 - r12) / s;
+    qy = (r02 - r20) / s;
+    qz = (r10 - r01) / s;
+  } else if (r00 > r11 && r00 > r22) {
+    const double s = std::sqrt(1.0 + r00 - r11 - r22) * 2.0;
+    qw = (r21 - r12) / s;
+    qx = 0.25 * s;
+    qy = (r01 + r10) / s;
+    qz = (r02 + r20) / s;
+  } else if (r11 > r22) {
+    const double s = std::sqrt(1.0 + r11 - r00 - r22) * 2.0;
+    qw = (r02 - r20) / s;
+    qx = (r01 + r10) / s;
+    qy = 0.25 * s;
+    qz = (r12 + r21) / s;
+  } else {
+    const double s = std::sqrt(1.0 + r22 - r00 - r11) * 2.0;
+    qw = (r10 - r01) / s;
+    qx = (r02 + r20) / s;
+    qy = (r12 + r21) / s;
+    qz = 0.25 * s;
+  }
+
+  pose->mutable_rot()->set_w(qw);
+  pose->mutable_rot()->set_x(qx);
+  pose->mutable_rot()->set_y(qy);
+  pose->mutable_rot()->set_z(qz);
+}
+
 }  // namespace
 
 bool FrankaPlugin::initialize(const std::string& config_path) {
@@ -288,8 +344,8 @@ void FrankaPlugin::cmd_subscriber_callback(const std::string& key, const std::st
   if (state != ControlState::kInference) {
     static int dropped_cmd_counter = 0;
     if (dropped_cmd_counter++ % 50 == 0) {
-      std::cout << "[FrankaPlugin] dropping command on '" << key
-                << "' while state=" << control_state_name(state) << "\n";
+    //   std::cout << "[FrankaPlugin] dropping command on '" << key
+    //             << "' while state=" << control_state_name(state) << "\n";
     }
     return;
   }
@@ -346,16 +402,16 @@ void FrankaPlugin::cmd_subscriber_callback(const std::string& key, const std::st
   // Debug output
   static int cmd_counter = 0;
   if (cmd_counter++ % 50 == 0) {
-    std::cout << "[FrankaPlugin] CMD: [";
-    for (int i = 0; i < 7; ++i) {
-      std::cout << cmd.joints(i).position();
-      if (i < 6) std::cout << ", ";
-    }
-    std::cout << "]";
-    if (cmd.joints_size() == 8) {
-      std::cout << " gripper=" << cmd.joints(7).position();
-    }
-    std::cout << "\n";
+  //   std::cout << "[FrankaPlugin] CMD: [";
+  //   for (int i = 0; i < 7; ++i) {
+  //     std::cout << cmd.joints(i).position();
+  //     if (i < 6) std::cout << ", ";
+  //   }
+  //   std::cout << "]";
+  //   if (cmd.joints_size() == 8) {
+  //     std::cout << " gripper=" << cmd.joints(7).position();
+  //   }
+  //   std::cout << "\n";
   }
 }
 
@@ -658,10 +714,10 @@ void FrankaPlugin::run() {
           // Debug: show position error direction periodically
           static int ctrl_debug = 0;
           if (ctrl_debug++ % 1000 == 0) {
-            std::cout << "[FrankaPlugin] q_des[0]=" << q_des[0] 
-                      << " q=" << robot_state.q[0]
-                      << " err=" << (q_des[0] - robot_state.q[0])
-                      << " tau=" << tau_d[0] << "\n";
+            // std::cout << "[FrankaPlugin] q_des[0]=" << q_des[0] 
+            //           << " q=" << robot_state.q[0]
+            //           << " err=" << (q_des[0] - robot_state.q[0])
+            //           << " tau=" << tau_d[0] << "\n";
           }
 
           franka::Torques cmd(tau_d);
@@ -717,6 +773,15 @@ bool FrankaPlugin::publish_state(const franka::RobotState& robot_state) {
       joint->set_velocity(robot_state.dq[i]);
       joint->set_effort(robot_state.tau_J[i]);
     }
+    auto* force = obs.mutable_force();
+    force->set_fx(robot_state.O_F_ext_hat_K[0]);
+    force->set_fy(robot_state.O_F_ext_hat_K[1]);
+    force->set_fz(robot_state.O_F_ext_hat_K[2]);
+    force->set_tx(robot_state.O_F_ext_hat_K[3]);
+    force->set_ty(robot_state.O_F_ext_hat_K[4]);
+    force->set_tz(robot_state.O_F_ext_hat_K[5]);
+    set_pose_from_transform(robot_state.O_T_EE, obs.mutable_pose_ee());
+    set_pose_from_transform(robot_state.O_T_EE_d, obs.mutable_pose_ee_d());
     if (enable_gripper_) {
       bool has_gripper_state = false;
       double gripper_width = gripper_max_width_;

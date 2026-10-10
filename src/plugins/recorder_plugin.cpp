@@ -37,7 +37,8 @@ hid_t OpenOrCreateGroup(hid_t file_id, const std::string& group_name) {
   return H5Gcreate2(file_id, group_name.c_str(), H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
 }
 
-hid_t OpenOrCreateDataset1D(hid_t group_id, const char* name, hid_t type, hsize_t chunk_hint) {
+hid_t OpenOrCreateDataset1D(hid_t group_id, const char* name, hid_t type, hsize_t chunk_hint,
+                          hsize_t chunk_limit) {
   if (H5Lexists(group_id, name, H5P_DEFAULT) > 0) {
     return H5Dopen2(group_id, name, H5P_DEFAULT);
   }
@@ -46,7 +47,7 @@ hid_t OpenOrCreateDataset1D(hid_t group_id, const char* name, hid_t type, hsize_
   hsize_t max_dims[1] = {H5S_UNLIMITED};
   hid_t space = H5Screate_simple(1, dims, max_dims);
   hid_t dcpl = H5Pcreate(H5P_DATASET_CREATE);
-  hsize_t chunk[1] = {std::max<hsize_t>(1, std::min<hsize_t>(chunk_hint, 1024))};
+  hsize_t chunk[1] = {std::max<hsize_t>(1, std::min<hsize_t>(chunk_hint, chunk_limit))};
   H5Pset_chunk(dcpl, 1, chunk);
   hid_t ds = H5Dcreate2(group_id, name, type, space, H5P_DEFAULT, dcpl, H5P_DEFAULT);
   H5Pclose(dcpl);
@@ -73,8 +74,9 @@ hid_t OpenOrCreateDataset2D(hid_t group_id, const char* name, hid_t type, hsize_
 }
 
 template <typename T>
-bool AppendDataset1D(hid_t group_id, const char* name, hid_t type, const std::vector<T>& data) {
-  hid_t ds = OpenOrCreateDataset1D(group_id, name, type, data.size());
+bool AppendDataset1D(hid_t group_id, const char* name, hid_t type, const std::vector<T>& data,
+                     hsize_t chunk_limit = 1024) {
+  hid_t ds = OpenOrCreateDataset1D(group_id, name, type, data.size(), chunk_limit);
   if (ds < 0) {
     return false;
   }
@@ -147,6 +149,22 @@ hsize_t Dataset1DSize(hid_t group_id, const char* name) {
   return dims[0];
 }
 
+void AppendPoseValues(const franka::Pose& pose, std::vector<double>* values) {
+  values->push_back(pose.pos().x());
+  values->push_back(pose.pos().y());
+  values->push_back(pose.pos().z());
+  values->push_back(pose.rot().w());
+  values->push_back(pose.rot().x());
+  values->push_back(pose.rot().y());
+  values->push_back(pose.rot().z());
+}
+
+void AppendZeroValues(std::vector<double>* values, int count) {
+  for (int i = 0; i < count; ++i) {
+    values->push_back(0.0);
+  }
+}
+
 }  // namespace
 
 void RecorderPlugin::subscribe_callback(const std::string& key, const std::string& payload) {
@@ -154,11 +172,7 @@ void RecorderPlugin::subscribe_callback(const std::string& key, const std::strin
 
   {
     std::lock_guard<std::mutex> lk(buffer_mutex_);
-    if (!accepting_) {
-      return;
-    }
-
-    if (!anchor_seen_ && key != anchor_topic_) {
+    if (!accepting_ || !recording_active_) {
       return;
     }
 
@@ -171,7 +185,6 @@ void RecorderPlugin::subscribe_callback(const std::string& key, const std::strin
     last = t_ns;
 
     if (key == anchor_topic_) {
-      anchor_seen_ = true;
       ++anchor_count_since_flush_;
     }
 
@@ -179,9 +192,11 @@ void RecorderPlugin::subscribe_callback(const std::string& key, const std::strin
     msg.topic = key;
     msg.payload = payload;
     msg.timestamp_ns = t_ns;
+    buffer_bytes_ += msg.payload.size();
     buffer_.push_back(std::move(msg));
 
-    if (key == anchor_topic_ && anchor_count_since_flush_ >= flush_anchor_count_) {
+    if ((key == anchor_topic_ && anchor_count_since_flush_ >= flush_anchor_count_) ||
+        buffer_bytes_ >= flush_buffer_bytes_) {
       anchor_flush_requested_ = true;
       anchor_flush_boundary_ns_ = t_ns;
       anchor_count_since_flush_ = 0;
@@ -192,10 +207,52 @@ void RecorderPlugin::subscribe_callback(const std::string& key, const std::strin
 void RecorderPlugin::next_record_callback(const std::string& key, const std::string& payload) {
   (void)key;
   (void)payload;
-  std::cout << "recorder_plugin: next_record requested\n";
+  std::lock_guard<std::mutex> control_lk(control_mutex_);
+  {
+    std::lock_guard<std::mutex> lk(buffer_mutex_);
+    if (!accepting_ || !recording_active_) {
+      return;
+    }
+  }
+  std::cout << "recorder_plugin: checkpoint requested\n";
   std::lock_guard<std::mutex> flush_lk(flush_mutex_);
   flush_all();
-  rotate_record_file();
+}
+
+void RecorderPlugin::control_state_callback(const std::string& key, const std::string& payload) {
+  (void)key;
+  std::lock_guard<std::mutex> control_lk(control_mutex_);
+  const bool entering_recording = payload == recording_state_;
+  {
+    std::lock_guard<std::mutex> lk(buffer_mutex_);
+    if (!accepting_ || stop_ || entering_recording == recording_active_) {
+      return;
+    }
+    // Close the data gate immediately, before waiting for an ongoing disk write.
+    if (!entering_recording) {
+      recording_active_ = false;
+    }
+  }
+
+  std::lock_guard<std::mutex> flush_lk(flush_mutex_);
+  if (entering_recording) {
+    {
+      std::lock_guard<std::mutex> file_lk(file_mutex_);
+      current_h5_path_ = make_h5_path() + ".inprogress";
+    }
+    {
+      std::lock_guard<std::mutex> lk(buffer_mutex_);
+      anchor_count_since_flush_ = 0;
+      anchor_flush_requested_ = false;
+      anchor_flush_boundary_ns_ = 0;
+      last_record_ns_by_topic_.clear();
+      recording_active_ = true;
+    }
+    std::cout << "recorder_plugin: " << payload << " -> recording started\n";
+  } else {
+    finish_recording();
+    std::cout << "recorder_plugin: " << payload << " -> recording finished\n";
+  }
 }
 
 bool RecorderPlugin::initialize(const std::string& config_path) {
@@ -230,6 +287,17 @@ bool RecorderPlugin::initialize(const std::string& config_path) {
     anchor_topic_ = root["anchor_topic"].as<std::string>();
   }
 
+  if (root["state_machine_topic"]) {
+    state_machine_topic_ = root["state_machine_topic"].as<std::string>();
+  }
+  if (root["recording_state"]) {
+    recording_state_ = root["recording_state"].as<std::string>();
+  }
+  if (state_machine_topic_.empty() || recording_state_.empty()) {
+    std::cerr << "recorder_plugin: state_machine_topic and recording_state must not be empty\n";
+    return false;
+  }
+
   if (root["flush_anchor_count"]) {
     const int count = root["flush_anchor_count"].as<int>();
     if (count > 0) {
@@ -239,6 +307,15 @@ bool RecorderPlugin::initialize(const std::string& config_path) {
 
   if (root["next_record_topic"]) {
     next_record_topic_ = root["next_record_topic"].as<std::string>();
+  }
+
+  if (root["flush_buffer_mb"]) {
+    const int mb = root["flush_buffer_mb"].as<int>();
+    if (mb <= 0) {
+      std::cerr << "recorder_plugin: flush_buffer_mb must be positive\n";
+      return false;
+    }
+    flush_buffer_bytes_ = static_cast<size_t>(mb) * 1024 * 1024;
   }
 
   if (root["data_dir"]) {
@@ -269,10 +346,11 @@ bool RecorderPlugin::initialize(const std::string& config_path) {
 void RecorderPlugin::run() {
   stop_ = false;
   accepting_ = true;
-  anchor_seen_ = false;
+  recording_active_ = false;
   anchor_count_since_flush_ = 0;
   anchor_flush_requested_ = false;
   anchor_flush_boundary_ns_ = 0;
+  buffer_bytes_ = 0;
   current_h5_path_.clear();
   last_record_ns_by_topic_.clear();
   running_ = true;
@@ -280,6 +358,11 @@ void RecorderPlugin::run() {
   if (!message_system_ || !message_system_->is_open()) {
     std::cerr << "recorder_plugin: Zenoh not open; subscriptions may fail\n";
   }
+
+  message_system_->subscribe(
+      state_machine_topic_, [this](const std::string& key, const std::string& payload) {
+        control_state_callback(key, payload);
+      });
 
   for (const auto& topic : topics_) {
     message_system_->subscribe(
@@ -294,7 +377,8 @@ void RecorderPlugin::run() {
         next_record_callback(key, payload);
       });
   std::cout << "recorder_plugin: subscribed to control topic '" << next_record_topic_ << "'\n";
-  std::cout << "recorder_plugin: waiting for anchor topic '" << anchor_topic_ << "'\n";
+  std::cout << "recorder_plugin: waiting for state '" << recording_state_
+            << "' on '" << state_machine_topic_ << "'\n";
 
   while (!stop_) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -302,12 +386,14 @@ void RecorderPlugin::run() {
   }
 
   {
-    std::lock_guard<std::mutex> lk(buffer_mutex_);
-    accepting_ = false;
-  }
-  {
+    std::lock_guard<std::mutex> control_lk(control_mutex_);
+    {
+      std::lock_guard<std::mutex> lk(buffer_mutex_);
+      accepting_ = false;
+      recording_active_ = false;
+    }
     std::lock_guard<std::mutex> flush_lk(flush_mutex_);
-    flush_all();
+    finish_recording();
   }
 
   if (message_system_) {
@@ -346,26 +432,39 @@ std::string RecorderPlugin::make_h5_path() const {
     filename << "unknown";
   }
   // Unique suffix so two saves in the same wall-clock second cannot clobber each other.
-  const int64_t epoch_ms =
-      std::chrono::duration_cast<std::chrono::milliseconds>(
+  const int64_t epoch_ns =
+      std::chrono::duration_cast<std::chrono::nanoseconds>(
           std::chrono::system_clock::now().time_since_epoch())
           .count();
-  filename << "_" << epoch_ms << ".h5";
+  filename << "_" << epoch_ns << ".h5";
   return filename.str();
 }
 
-void RecorderPlugin::rotate_record_file() {
+void RecorderPlugin::finish_recording() {
+  flush_all();
   std::lock_guard<std::mutex> file_lk(file_mutex_);
-  current_h5_path_ = make_h5_path();
-
-  hid_t file_id = H5Fcreate(current_h5_path_.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
-  if (file_id < 0) {
-    std::cerr << "recorder_plugin: failed to create new HDF5 file: " << current_h5_path_ << "\n";
-    current_h5_path_.clear();
+  if (current_h5_path_.empty()) {
     return;
   }
-  H5Fclose(file_id);
-  std::cout << "recorder_plugin: next recording file: " << current_h5_path_ << "\n";
+  if (!std::filesystem::exists(current_h5_path_)) {
+    // An empty running episode still produces exactly one file on completion.
+    hid_t file_id = H5Fcreate(current_h5_path_.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+    if (file_id < 0) {
+      std::cerr << "recorder_plugin: failed to create recording: " << current_h5_path_ << '\n';
+      current_h5_path_.clear();
+      return;
+    }
+    H5Fclose(file_id);
+  }
+  const std::string final_path = current_h5_path_.substr(0, current_h5_path_.size() - 11);
+  std::error_code ec;
+  std::filesystem::rename(current_h5_path_, final_path, ec);
+  if (ec) {
+    std::cerr << "recorder_plugin: failed to finalize " << current_h5_path_ << ": " << ec.message() << '\n';
+  } else {
+    std::cout << "recorder_plugin: recording saved: " << final_path << '\n';
+  }
+  current_h5_path_.clear();
 }
 
 void RecorderPlugin::flush_anchor_if_requested() {
@@ -381,6 +480,7 @@ void RecorderPlugin::flush_anchor_if_requested() {
     std::deque<RecordedMessage> keep;
     while (!buffer_.empty()) {
       if (buffer_.front().timestamp_ns <= anchor_flush_boundary_ns_) {
+        buffer_bytes_ -= buffer_.front().payload.size();
         snapshot.push_back(std::move(buffer_.front()));
       } else {
         keep.push_back(std::move(buffer_.front()));
@@ -402,6 +502,7 @@ void RecorderPlugin::flush_all() {
   {
     std::lock_guard<std::mutex> lk(buffer_mutex_);
     snapshot.swap(buffer_);
+    buffer_bytes_ = 0;
     anchor_count_since_flush_ = 0;
     anchor_flush_requested_ = false;
     anchor_flush_boundary_ns_ = 0;
@@ -419,7 +520,7 @@ void RecorderPlugin::append_hdf5(const std::deque<RecordedMessage>& messages) {
 
   std::lock_guard<std::mutex> file_lk(file_mutex_);
   if (current_h5_path_.empty()) {
-    current_h5_path_ = make_h5_path();
+    current_h5_path_ = make_h5_path() + ".inprogress";
   }
 
   const bool exists = std::filesystem::exists(current_h5_path_);
@@ -444,10 +545,11 @@ void RecorderPlugin::append_hdf5(const std::deque<RecordedMessage>& messages) {
     const bool has_proto = (it_proto != topic_proto_.end());
     const std::string& proto_name = has_proto ? it_proto->second : std::string{};
 
-    std::vector<RecordedMessage> topic_msgs;
+    // The snapshot owns these messages; avoid copying multi-megabyte image payloads.
+    std::vector<const RecordedMessage*> topic_msgs;
     for (const auto& msg : messages) {
       if (msg.topic == topic) {
-        topic_msgs.push_back(msg);
+        topic_msgs.push_back(&msg);
       }
     }
 
@@ -459,17 +561,22 @@ void RecorderPlugin::append_hdf5(const std::deque<RecordedMessage>& messages) {
     std::vector<int64_t> timestamps;
     timestamps.reserve(topic_msgs.size());
     for (const auto& msg : topic_msgs) {
-      timestamps.push_back(msg.timestamp_ns);
+      timestamps.push_back(msg->timestamp_ns);
     }
     AppendDataset1D(group_id, "timestamps_ns", H5T_NATIVE_INT64, timestamps);
 
     if (proto_name == "franka.RobotObservation") {
+      constexpr int kForceCols = 6;
+      constexpr int kPoseCols = 7;
       std::vector<uint32_t> type_vec;
       std::vector<uint32_t> sequence_vec;
       std::vector<float> sys_time_vec;
       std::vector<double> joint_pos_vec;
       std::vector<double> joint_vel_vec;
       std::vector<double> joint_eff_vec;
+      std::vector<double> force_vec;
+      std::vector<double> pose_ee_vec;
+      std::vector<double> pose_ee_d_vec;
 
       type_vec.reserve(topic_msgs.size());
       sequence_vec.reserve(topic_msgs.size());
@@ -477,10 +584,13 @@ void RecorderPlugin::append_hdf5(const std::deque<RecordedMessage>& messages) {
       joint_pos_vec.reserve(topic_msgs.size() * kFrankaRecordedJoints);
       joint_vel_vec.reserve(topic_msgs.size() * kFrankaRecordedJoints);
       joint_eff_vec.reserve(topic_msgs.size() * kFrankaRecordedJoints);
+      force_vec.reserve(topic_msgs.size() * kForceCols);
+      pose_ee_vec.reserve(topic_msgs.size() * kPoseCols);
+      pose_ee_d_vec.reserve(topic_msgs.size() * kPoseCols);
 
       for (const auto& msg : topic_msgs) {
         franka::RobotObservation obs;
-        if (!obs.ParseFromString(msg.payload)) {
+        if (!obs.ParseFromString(msg->payload)) {
           type_vec.push_back(0);
           sequence_vec.push_back(0);
           sys_time_vec.push_back(0.0f);
@@ -489,6 +599,11 @@ void RecorderPlugin::append_hdf5(const std::deque<RecordedMessage>& messages) {
             joint_vel_vec.push_back(0.0);
             joint_eff_vec.push_back(0.0);
           }
+          for (int i = 0; i < kForceCols; ++i) {
+            force_vec.push_back(0.0);
+          }
+          AppendZeroValues(&pose_ee_vec, kPoseCols);
+          AppendZeroValues(&pose_ee_d_vec, kPoseCols);
           continue;
         }
         type_vec.push_back(static_cast<uint32_t>(obs.type()));
@@ -508,11 +623,37 @@ void RecorderPlugin::append_hdf5(const std::deque<RecordedMessage>& messages) {
             joint_eff_vec.push_back(0.0);
           }
         }
+        if (obs.has_force()) {
+          const auto& force = obs.force();
+          force_vec.push_back(force.fx());
+          force_vec.push_back(force.fy());
+          force_vec.push_back(force.fz());
+          force_vec.push_back(force.tx());
+          force_vec.push_back(force.ty());
+          force_vec.push_back(force.tz());
+        } else {
+          for (int i = 0; i < kForceCols; ++i) {
+            force_vec.push_back(0.0);
+          }
+        }
+        if (obs.has_pose_ee()) {
+          AppendPoseValues(obs.pose_ee(), &pose_ee_vec);
+        } else {
+          AppendZeroValues(&pose_ee_vec, kPoseCols);
+        }
+        if (obs.has_pose_ee_d()) {
+          AppendPoseValues(obs.pose_ee_d(), &pose_ee_d_vec);
+        } else {
+          AppendZeroValues(&pose_ee_d_vec, kPoseCols);
+        }
       }
 
       AppendDataset1D(group_id, "type", H5T_NATIVE_UINT32, type_vec);
       AppendDataset1D(group_id, "sequence", H5T_NATIVE_UINT32, sequence_vec);
       AppendDataset1D(group_id, "sys_time", H5T_NATIVE_FLOAT, sys_time_vec);
+      AppendDataset2D(group_id, "force", H5T_NATIVE_DOUBLE, force_vec, topic_msgs.size(), kForceCols);
+      AppendDataset2D(group_id, "pose_ee", H5T_NATIVE_DOUBLE, pose_ee_vec, topic_msgs.size(), kPoseCols);
+      AppendDataset2D(group_id, "pose_ee_d", H5T_NATIVE_DOUBLE, pose_ee_d_vec, topic_msgs.size(), kPoseCols);
       AppendDataset2D(group_id, "joints_position", H5T_NATIVE_DOUBLE, joint_pos_vec, topic_msgs.size(),
                       kFrankaRecordedJoints);
       AppendDataset2D(group_id, "joints_velocity", H5T_NATIVE_DOUBLE, joint_vel_vec, topic_msgs.size(),
@@ -537,7 +678,7 @@ void RecorderPlugin::append_hdf5(const std::deque<RecordedMessage>& messages) {
 
       for (const auto& msg : topic_msgs) {
         franka::RobotCommand cmd;
-        if (!cmd.ParseFromString(msg.payload)) {
+        if (!cmd.ParseFromString(msg->payload)) {
           type_vec.push_back(0);
           sequence_vec.push_back(0);
           sys_time_vec.push_back(0.0f);
@@ -587,7 +728,7 @@ void RecorderPlugin::append_hdf5(const std::deque<RecordedMessage>& messages) {
 
       for (const auto& msg : topic_msgs) {
         franka::CartesianDPoseCmd dpose;
-        if (!dpose.ParseFromString(msg.payload)) {
+        if (!dpose.ParseFromString(msg->payload)) {
           for (int i = 0; i < kCols; ++i) {
             values_vec.push_back(0.0f);
           }
@@ -610,7 +751,7 @@ void RecorderPlugin::append_hdf5(const std::deque<RecordedMessage>& messages) {
 
       for (const auto& msg : topic_msgs) {
         demo_inference::Observation obs;
-        if (!obs.ParseFromString(msg.payload)) {
+        if (!obs.ParseFromString(msg->payload)) {
           for (int i = 0; i < kValuesCols; ++i) {
             values_vec.push_back(0.0);
           }
@@ -642,11 +783,16 @@ void RecorderPlugin::append_hdf5(const std::deque<RecordedMessage>& messages) {
       std::vector<uint64_t> img_offsets;
       std::vector<uint64_t> img_lengths;
       std::vector<char> img_blob;
+      size_t image_bytes_hint = 0;
+      for (const auto* msg : topic_msgs) {
+        image_bytes_hint += msg->payload.size();
+      }
+      img_blob.reserve(image_bytes_hint);
       uint64_t current_offset = base_image_offset;
 
       for (const auto& msg : topic_msgs) {
         kinect::rgbImage img;
-        if (!img.ParseFromString(msg.payload)) {
+        if (!img.ParseFromString(msg->payload)) {
           width_vec.push_back(0);
           height_vec.push_back(0);
           channels_vec.push_back(0);
@@ -670,7 +816,8 @@ void RecorderPlugin::append_hdf5(const std::deque<RecordedMessage>& messages) {
       AppendDataset1D(group_id, "height", H5T_NATIVE_INT32, height_vec);
       AppendDataset1D(group_id, "channels", H5T_NATIVE_INT32, channels_vec);
       AppendDataset1D(group_id, "format_type", H5T_NATIVE_INT32, type_vec);
-      AppendDataset1D(group_id, "image_data", H5T_NATIVE_CHAR, img_blob);
+      // 1 MiB chunks avoid thousands of HDF5 chunks per raw RGB frame.
+      AppendDataset1D(group_id, "image_data", H5T_NATIVE_CHAR, img_blob, 1024 * 1024);
       AppendDataset1D(group_id, "image_offsets", H5T_NATIVE_UINT64, img_offsets);
       AppendDataset1D(group_id, "image_lengths", H5T_NATIVE_UINT64, img_lengths);
     }

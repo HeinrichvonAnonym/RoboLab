@@ -23,13 +23,17 @@ topic_proto:
 
 record_frequency: 30
 
-# Recording starts only after the anchor topic is received. Every
-# flush_anchor_count accepted anchor samples, the recorder appends buffered data
-# up to that anchor timestamp to the current HDF5 file and keeps newer samples
-# for the next append.
+# Record only during inference (the robot's running state). Leaving inference
+# finalizes one HDF5 file; init, gohome and standby samples are ignored.
+state_machine_topic: franka/state_machine
+recording_state: inference
+# These settings checkpoint the active episode into the SAME temporary file.
+# It becomes a .h5 file when the episode ends, without splitting the episode.
 anchor_topic: franka/state
-flush_anchor_count: 1000
+# Flush roughly once per second rather than retaining tens of seconds of raw images.
+flush_anchor_count: 30
+# Also request a flush when image payloads reach this size, even if the anchor stalls.
+flush_buffer_mb: 256
 
-# keyboard_plugin publishes this topic on F1 to flush the current buffer and
-# rotate to a new HDF5 file.
+# F1 checkpoints the active episode; F2 -> standby finalizes the episode.
 next_record_topic: next_record

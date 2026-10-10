@@ -36,6 +36,15 @@ message Pose {
   Quatenion rot = 2;
 }
 
+message Force {
+  double fx = 1;
+  double fy = 2;
+  double fz = 3;
+  double tx = 4;
+  double ty = 5;
+  double tz = 6;
+}
+
 /// Wire format for Zenoh topic payloads (e.g. robot/command).
 message RobotCommand {
   enum Type {
@@ -63,6 +72,11 @@ message RobotObservation{
   string note = 4;
   repeated JointCommand joints = 5;
   float sys_time = 6;
+
+  Force force = 7;
+  Pose pose_ee = 8;
+  Pose pose_ee_d = 9;
+
 }
 
 message StampedPose{

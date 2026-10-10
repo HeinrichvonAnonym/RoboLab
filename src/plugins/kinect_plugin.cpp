@@ -138,7 +138,8 @@ bool KinectPlugin::initialize(const std::string& config_path) {
 void KinectPlugin::run() {
   stop_ = false;
   running_ = true;
-  libfreenect2::setGlobalLogger(nullptr);  // disable libfreenect2 logs
+  // Keep device/USB errors visible; LIBFREENECT2_LOGGER_LEVEL controls verbosity.
+  libfreenect2::setGlobalLogger(libfreenect2::createConsoleLoggerWithDefaultLevel());
 
   // This loop is intentionally structured like libfreenect2's Protonect.cpp:
   // wait for frames -> optional viewer update -> copy payload for publish -> release -> publish.
@@ -196,6 +197,8 @@ void KinectPlugin::run() {
   bool viewer_initialized = false;
   int reconnect_attempt = 0;
   while (!stop_) {
+    // A USB reset/replug can change the device address; refresh cached handles before reopening.
+    freenect2.enumerateDevices();
     // Open device by serial number. Pipeline is owned/freed by libfreenect2.
     libfreenect2::PacketPipeline* pipeline = nullptr;
 #ifdef LIBFREENECT2_WITH_CUDA_SUPPORT
@@ -215,9 +218,9 @@ void KinectPlugin::run() {
     }
     dev_ = dev;
 
-    libfreenect2::SyncMultiFrameListener listener(types);
-    dev->setColorFrameListener(&listener);
-    dev->setIrAndDepthFrameListener(&listener);
+    auto listener = std::make_unique<libfreenect2::SyncMultiFrameListener>(types);
+    dev->setColorFrameListener(listener.get());
+    dev->setIrAndDepthFrameListener(listener.get());
 
     bool started = false;
     if (enable_rgb_ && enable_depth_) {
@@ -229,6 +232,7 @@ void KinectPlugin::run() {
     if (!started) {
       std::cerr << "kinect_plugin: failed to start Kinect streams\n";
       dev->close();
+      listener.reset();
       delete dev;
       dev_ = nullptr;
       reconnect_attempt++;
@@ -257,7 +261,7 @@ void KinectPlugin::run() {
       libfreenect2::FrameMap frames;
 
       // Shorter timeout improves recovery latency when USB stalls.
-      if (!listener.waitForNewFrame(frames, 2 * 1000)) {
+      if (!listener->waitForNewFrame(frames, 2 * 1000)) {
         timeout_count++;
         consecutive_timeouts++;
         std::cerr << "kinect_plugin: waitForNewFrame timed out x" << timeout_count
@@ -340,7 +344,7 @@ void KinectPlugin::run() {
         last_pub = now;
       }
 
-      listener.release(frames);
+      listener->release(frames);
 
       // Publish after release (Protonect doesn't publish, so this is our best-effort async-ish path).
       if (do_publish && message_system_ && message_system_->is_open()) {
@@ -403,6 +407,8 @@ void KinectPlugin::run() {
     if (dev_) {
       dev_->stop();
       dev_->close();
+      // Release queued CUDA frames while the device's pipeline allocators still exist.
+      listener.reset();
       delete dev_;
       dev_ = nullptr;
     }

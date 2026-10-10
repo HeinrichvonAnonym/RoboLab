@@ -1,0 +1,7 @@
+# Kinect-only bringup for checking USB capture without starting the robot.
+# Run from the repository root:
+#   ./build/apps/robo_lab_main config/bringup_kinect.yaml
+plugins:
+  - name: kinect_plugin
+    config: config/plugins/kinect_plugin_config.yaml
+    lib: ./build/plugins/libkinect_plugin.so
