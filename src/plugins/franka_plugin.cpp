@@ -16,6 +16,15 @@ namespace robo_lab {
 
 namespace {
 
+class FrankaGripperDevice : public GripperDevice {
+ public:
+  explicit FrankaGripperDevice(franka::Gripper& gripper) : gripper_(gripper) {}
+  bool move(double width, double speed) override { return gripper_.move(width, speed); }
+  bool stop() override { return gripper_.stop(); }
+ private:
+  franka::Gripper& gripper_;
+};
+
 bool read_double_sequence(const YAML::Node& node, const char* key, std::vector<double>* out) {
   if (!node || !node[key] || !node[key].IsSequence()) {
     return false;
@@ -97,6 +106,8 @@ void set_pose_from_transform(const std::array<double, 16>& transform, franka::Po
 }
 
 }  // namespace
+
+FrankaPlugin::~FrankaPlugin() { stop_gripper_worker(); }
 
 bool FrankaPlugin::initialize(const std::string& config_path) {
   config_path_ = config_path;
@@ -228,7 +239,29 @@ bool FrankaPlugin::initialize(const std::string& config_path) {
       }
     }
     if (enable_gripper_) {
+      gripper_options_.open_width = gripper_max_width_;
+      gripper_options_.closed_width = gripper_closed_width_;
+      gripper_options_.speed = gripper_speed_;
+      gripper_options_.close_threshold = gripper_close_threshold_;
+      if (root["gripper_retry_count"]) {
+        gripper_options_.retry_count = root["gripper_retry_count"].as<int>();
+      }
+      if (root["gripper_retry_interval_ms"]) {
+        gripper_options_.retry_interval = std::chrono::milliseconds(root["gripper_retry_interval_ms"].as<int>());
+      }
+      if (root["gripper_width_tolerance"]) {
+        gripper_options_.width_tolerance = root["gripper_width_tolerance"].as<double>();
+      }
+      if (root["gripper_state_max_age_ms"]) {
+        gripper_options_.state_max_age = std::chrono::milliseconds(root["gripper_state_max_age_ms"].as<int>());
+      }
+      if (root["gripper_confirmation_wait_ms"]) {
+        gripper_options_.confirmation_wait = std::chrono::milliseconds(root["gripper_confirmation_wait_ms"].as<int>());
+      }
       gripper_ = std::make_unique<franka::Gripper>(robot_ip_);
+      gripper_worker_ = std::make_unique<GripperWorker>(
+          std::make_shared<FrankaGripperDevice>(*gripper_), gripper_options_,
+          [](const std::string& message) { std::cout << "[FrankaPlugin] gripper " << message << '\n'; });
     }
 
   } catch (const YAML::Exception& e) {
@@ -249,7 +282,12 @@ bool FrankaPlugin::initialize(const std::string& config_path) {
     std::cout << ", gripper_max_width=" << gripper_max_width_
               << ", gripper_closed_width=" << gripper_closed_width_
               << ", gripper_speed=" << gripper_speed_
-              << ", gripper_close_threshold=" << gripper_close_threshold_;
+              << ", gripper_close_threshold=" << gripper_close_threshold_
+              << ", gripper_retry_count=" << gripper_options_.retry_count
+              << ", gripper_retry_interval_ms=" << gripper_options_.retry_interval.count()
+              << ", gripper_width_tolerance=" << gripper_options_.width_tolerance
+              << ", gripper_state_max_age_ms=" << gripper_options_.state_max_age.count()
+              << ", gripper_confirmation_wait_ms=" << gripper_options_.confirmation_wait.count();
   }
   if (!kp_gains_.empty()) {
     std::cout << ", gains n=" << kp_gains_.size();
@@ -286,7 +324,9 @@ bool FrankaPlugin::publish_control_state(ControlState state) {
 }
 
 void FrankaPlugin::reset_control_session(const franka::RobotState& robot_state) {
+  std::lock_guard<std::mutex> transition(control_transition_mutex_);
   control_state_.store(ControlState::kInit);
+  if (gripper_worker_) gripper_worker_->set_enabled(false);
   {
     std::lock_guard<std::mutex> lock(target_mutex_);
     q_target_ = robot_state.q;
@@ -309,6 +349,7 @@ void FrankaPlugin::enter_inference_from_control(const franka::RobotState& robot_
 }
 
 void FrankaPlugin::trigger_subscriber_callback(const std::string& key, const std::string& payload) {
+  std::lock_guard<std::mutex> transition(control_transition_mutex_);
   if (payload != "trigger") {
     std::cout << "[FrankaPlugin] ignoring trigger payload on '" << key
               << "' (bytes=" << payload.size() << ")\n";
@@ -324,12 +365,14 @@ void FrankaPlugin::trigger_subscriber_callback(const std::string& key, const std
 
   expected = ControlState::kStandby;
   if (control_state_.compare_exchange_strong(expected, ControlState::kInference)) {
+    if (gripper_worker_) gripper_worker_->set_enabled(true);
     publish_control_state(ControlState::kInference);
     return;
   }
 
   expected = ControlState::kInference;
   if (control_state_.compare_exchange_strong(expected, ControlState::kStandby)) {
+    if (gripper_worker_) gripper_worker_->set_enabled(false);
     publish_control_state(ControlState::kStandby);
     std::cout << "[FrankaPlugin] trigger: inference -> standby\n";
     return;
@@ -340,14 +383,14 @@ void FrankaPlugin::trigger_subscriber_callback(const std::string& key, const std
 }
 
 void FrankaPlugin::cmd_subscriber_callback(const std::string& key, const std::string& payload) {
-  const ControlState state = control_state_.load();
-  if (state != ControlState::kInference) {
-    static int dropped_cmd_counter = 0;
-    if (dropped_cmd_counter++ % 50 == 0) {
-    //   std::cout << "[FrankaPlugin] dropping command on '" << key
-    //             << "' while state=" << control_state_name(state) << "\n";
+  uint64_t gripper_session = 0;
+  {
+    std::lock_guard<std::mutex> transition(control_transition_mutex_);
+    if (control_state_.load() != ControlState::kInference) {
+      return;
     }
-    return;
+    // Capture the session atomically with the state check, before parsing.
+    gripper_session = gripper_worker_ ? gripper_worker_->session() : 0;
   }
 
   franka::RobotCommand cmd;
@@ -378,24 +421,8 @@ void FrankaPlugin::cmd_subscriber_callback(const std::string& key, const std::st
         std::cerr << "franka_plugin: received 8D command but gripper is disabled\n";
         warned_gripper_disabled = true;
       }
-    } else {
-      const double close_norm = clamp_double(cmd.joints(7).position(), 0.0, 1.0);
-      const bool target_closed = close_norm >= gripper_close_threshold_;
-      bool target_changed = false;
-      {
-        std::lock_guard<std::mutex> lock(gripper_mutex_);
-        target_changed = !has_gripper_target_ || gripper_target_closed_ != target_closed;
-        gripper_target_close_norm_ = close_norm;
-        gripper_target_closed_ = target_closed;
-        has_gripper_target_ = true;
-        if (target_changed) {
-          ++gripper_target_seq_;
-        }
-      }
-      if (target_changed) {
-        gripper_action_cv_.notify_one();
-        gripper_interrupt_cv_.notify_one();
-      }
+    } else if (gripper_worker_) {
+      gripper_worker_->submit(cmd.joints(7).position(), gripper_session);
     }
   }
   
@@ -416,155 +443,40 @@ void FrankaPlugin::cmd_subscriber_callback(const std::string& key, const std::st
 }
 
 void FrankaPlugin::gripper_state_loop() {
-  while (true) {
-    {
-      std::lock_guard<std::mutex> lock(gripper_mutex_);
-      if (gripper_stop_) {
-        break;
-      }
-    }
-
+  while (!gripper_reader_stop_) {
     try {
-      if (gripper_) {
-        const franka::GripperState state = gripper_->readOnce();
-        {
-          std::lock_guard<std::mutex> lock(gripper_mutex_);
-          gripper_state_width_ = state.width;
-          has_gripper_state_ = true;
-        }
-      }
-      std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    } catch (const std::exception& e) {
-      {
-        std::lock_guard<std::mutex> lock(gripper_mutex_);
-        if (gripper_stop_) {
-          break;
-        }
-      }
-      std::cerr << "franka_plugin: gripper state read failed: " << e.what() << '\n';
-      std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    }
-  }
-}
-
-void FrankaPlugin::gripper_action_loop() {
-  uint64_t handled_seq = 0;
-  while (true) {
-    bool target_closed = false;
-    double close_norm = 0.0;
-    uint64_t target_seq = 0;
-    {
-      std::unique_lock<std::mutex> lock(gripper_mutex_);
-      gripper_action_cv_.wait(lock, [&] {
-        return gripper_stop_ || (has_gripper_target_ && gripper_target_seq_ != handled_seq);
+      const franka::GripperState state = gripper_->readOnce();
+      gripper_worker_->update_state(state.width);
+      std::unique_lock<std::mutex> lock(gripper_reader_mutex_);
+      gripper_reader_cv_.wait_for(lock, std::chrono::milliseconds(20), [&] {
+        return gripper_reader_stop_.load();
       });
-      if (gripper_stop_) {
-        break;
-      }
-      target_closed = gripper_target_closed_;
-      close_norm = gripper_target_close_norm_;
-      target_seq = gripper_target_seq_;
-      gripper_move_in_progress_ = true;
-      gripper_active_closed_ = target_closed;
-      gripper_active_seq_ = target_seq;
-      gripper_stop_requested_seq_ = 0;
-    }
-    gripper_interrupt_cv_.notify_one();
-
-    try {
-      if (!gripper_) {
-        handled_seq = target_seq;
-      } else {
-        const double width = target_closed ? gripper_closed_width_ : gripper_max_width_;
-        std::cout << "[FrankaPlugin] gripper "
-                  << (target_closed ? "close" : "open")
-                  << " (gello=" << close_norm << ", width=" << width
-                  << ", seq=" << target_seq << ")\n";
-        gripper_->move(width, gripper_speed_);
-        handled_seq = target_seq;
-      }
     } catch (const std::exception& e) {
-      bool interrupted = false;
-      {
-        std::lock_guard<std::mutex> lock(gripper_mutex_);
-        interrupted = gripper_stop_ || gripper_target_seq_ != target_seq;
+      if (gripper_reader_stop_) break;
+      const auto feedback = gripper_worker_->feedback();
+      std::cerr << "franka_plugin: gripper state read failed: " << e.what();
+      if (feedback.valid) {
+        std::cerr << " cached_width=" << feedback.width << " feedback_age_ms="
+                  << std::chrono::duration_cast<std::chrono::milliseconds>(
+                         GripperWorker::Clock::now() - feedback.collected).count();
       }
-      if (interrupted) {
-        std::cout << "[FrankaPlugin] gripper move interrupted: " << e.what() << '\n';
-      } else {
-        std::cerr << "franka_plugin: gripper move failed: " << e.what() << '\n';
-      }
-      handled_seq = target_seq;
-    }
-
-    {
-      std::lock_guard<std::mutex> lock(gripper_mutex_);
-      if (gripper_active_seq_ == target_seq) {
-        gripper_move_in_progress_ = false;
-      }
-    }
-    gripper_interrupt_cv_.notify_one();
-    gripper_action_cv_.notify_one();
-  }
-}
-
-void FrankaPlugin::gripper_interrupt_loop() {
-  while (true) {
-    uint64_t active_seq = 0;
-    bool should_stop = false;
-    {
-      std::unique_lock<std::mutex> lock(gripper_mutex_);
-      gripper_interrupt_cv_.wait(lock, [&] {
-        return gripper_stop_ ||
-               (gripper_move_in_progress_ && has_gripper_target_ &&
-                gripper_target_seq_ != gripper_active_seq_ &&
-                gripper_target_closed_ != gripper_active_closed_ &&
-                gripper_stop_requested_seq_ != gripper_active_seq_);
+      std::cerr << '\n';
+      std::unique_lock<std::mutex> lock(gripper_reader_mutex_);
+      gripper_reader_cv_.wait_for(lock, std::chrono::milliseconds(500), [&] {
+        return gripper_reader_stop_.load();
       });
-      if (gripper_stop_) {
-        break;
-      }
-      active_seq = gripper_active_seq_;
-      gripper_stop_requested_seq_ = active_seq;
-      should_stop = true;
-    }
-
-    if (!should_stop || !gripper_) {
-      continue;
-    }
-    try {
-      std::cout << "[FrankaPlugin] gripper stop active seq=" << active_seq
-                << " for target seq change\n";
-      gripper_->stop();
-    } catch (const std::exception& e) {
-      std::cerr << "franka_plugin: gripper stop failed: " << e.what() << '\n';
     }
   }
 }
 
 void FrankaPlugin::stop_gripper_worker() {
-  {
-    std::lock_guard<std::mutex> lock(gripper_mutex_);
-    gripper_stop_ = true;
-  }
-  gripper_action_cv_.notify_one();
-  gripper_interrupt_cv_.notify_one();
-  if (gripper_) {
-    try {
-      gripper_->stop();
-    } catch (const std::exception& e) {
-      std::cerr << "franka_plugin: gripper stop during shutdown failed: " << e.what() << '\n';
-    }
-  }
-  if (gripper_interrupt_thread_.joinable()) {
-    gripper_interrupt_thread_.join();
-  }
-  if (gripper_action_thread_.joinable()) {
-    gripper_action_thread_.join();
-  }
-  if (gripper_state_thread_.joinable()) {
-    gripper_state_thread_.join();
-  }
+  std::lock_guard<std::mutex> lifecycle(gripper_lifecycle_mutex_);
+  gripper_reader_stop_ = true;
+  gripper_reader_cv_.notify_all();
+  // Only the worker's interrupt thread calls the SDK stop operation. Its stop()
+  // drains the current move and all claimed stops before joining either thread.
+  if (gripper_worker_) gripper_worker_->stop();
+  if (gripper_state_thread_.joinable()) gripper_state_thread_.join();
 }
 
 bool FrankaPlugin::go_home_cmd(const franka::RobotState& robot_state, std::array<double, 7>& q_cmd) {
@@ -615,17 +527,13 @@ void FrankaPlugin::run() {
     }
     return;
   }
-  if (enable_gripper_ && gripper_ && !gripper_action_thread_.joinable() &&
-      !gripper_interrupt_thread_.joinable() && !gripper_state_thread_.joinable()) {
-    {
-      std::lock_guard<std::mutex> lock(gripper_mutex_);
-      gripper_stop_ = false;
-      has_gripper_state_ = false;
-      gripper_state_width_ = gripper_max_width_;
+  if (enable_gripper_ && gripper_worker_) {
+    std::lock_guard<std::mutex> lifecycle(gripper_lifecycle_mutex_);
+    if (!stop_ && !gripper_state_thread_.joinable()) {
+      gripper_worker_->start();
+      gripper_reader_stop_ = false;
+      gripper_state_thread_ = std::thread(&FrankaPlugin::gripper_state_loop, this);
     }
-    gripper_state_thread_ = std::thread(&FrankaPlugin::gripper_state_loop, this);
-    gripper_action_thread_ = std::thread(&FrankaPlugin::gripper_action_loop, this);
-    gripper_interrupt_thread_ = std::thread(&FrankaPlugin::gripper_interrupt_loop, this);
   }
   constexpr double kTauLimit = 60.0;  // Conservative software saturation.
 
@@ -739,6 +647,7 @@ void FrankaPlugin::run() {
         true,
         1000.0);
       } catch (...) {
+        if (gripper_worker_) gripper_worker_->set_enabled(false);
         const franka::RobotState robot_state = robot_->readOnce();
         std::chrono::steady_clock::time_point end_time = std::chrono::steady_clock::now();
         if(end_time - start_time > std::chrono::milliseconds(20)){
@@ -782,15 +691,10 @@ bool FrankaPlugin::publish_state(const franka::RobotState& robot_state) {
     force->set_tz(robot_state.O_F_ext_hat_K[5]);
     set_pose_from_transform(robot_state.O_T_EE, obs.mutable_pose_ee());
     set_pose_from_transform(robot_state.O_T_EE_d, obs.mutable_pose_ee_d());
-    if (enable_gripper_) {
-      bool has_gripper_state = false;
-      double gripper_width = gripper_max_width_;
-      {
-        std::lock_guard<std::mutex> lock(gripper_mutex_);
-        has_gripper_state = has_gripper_state_;
-        gripper_width = gripper_state_width_;
-      }
-      if (has_gripper_state) {
+    if (enable_gripper_ && gripper_worker_) {
+      const auto feedback = gripper_worker_->feedback();
+      if (feedback.valid) {
+        const double gripper_width = feedback.width;
         const double width_range = gripper_max_width_ - gripper_closed_width_;
         const double gripper_close_norm =
             width_range > 1e-9

@@ -3,8 +3,10 @@
 from dataclasses import replace
 import importlib.util
 import io
+import os
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import threading
 import time
@@ -69,6 +71,19 @@ class FakeDetector:
 
 
 class TrackerTests(unittest.TestCase):
+    @unittest.skipUnless(os.environ.get("ROBOLAB_KINECT_SAMPLING_TEST"),
+                         "set ROBOLAB_KINECT_SAMPLING_TEST to the C++ test binary")
+    def test_cpp_downsample_message_decodes_with_existing_rgb_decoder(self):
+        with tempfile.TemporaryDirectory() as folder:
+            message = Path(folder) / "rgb.pb"
+            subprocess.run([os.environ["ROBOLAB_KINECT_SAMPLING_TEST"],
+                            "--write-rgb", str(message)], check=True)
+            rgb = ht.decode_rgb(message.read_bytes(), "BGRX")
+        expected = np.array([[[y * 31 + x * 7 + c for c in (2, 1, 0)]
+                              for x in (0, 2, 4)] for y in (0, 2)], dtype=np.uint8)
+        np.testing.assert_array_equal(rgb, expected)
+        self.assertEqual(rgb.shape, (2, 3, 3))
+
     def test_default_config(self):
         config = ht.load_config()
         self.assertEqual(config.rgb_topic, "kinec2/rgb")

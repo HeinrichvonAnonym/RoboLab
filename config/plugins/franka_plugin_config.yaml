@@ -15,6 +15,13 @@ gripper_max_width: 0.08
 gripper_closed_width: 0.0
 gripper_speed: 0.1
 gripper_close_threshold: 0.5
+# Additional attempts after a failed move. Repeated identical GELLO commands
+# do not reset this budget; changing the open/close target starts a new budget.
+gripper_retry_count: 2
+gripper_retry_interval_ms: 200
+gripper_width_tolerance: 0.001  # m
+gripper_state_max_age_ms: 200
+gripper_confirmation_wait_ms: 200
 
 dynamic:
   kp: [120.0, 120, 120, 120, 120, 150.0, 60.0] # stifness

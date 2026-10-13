@@ -28,9 +28,6 @@ class KinectPlugin : public Plugin {
   void stop() override;
 
  private:
-  bool publish_frame(libfreenect2::Frame* frame,
-                     const std::string& topic,
-                     int32_t proto_type);
   void update_viewer(libfreenect2::Frame* rgb,
                      libfreenect2::Frame* ir,
                      libfreenect2::Frame* depth);
@@ -39,6 +36,9 @@ class KinectPlugin : public Plugin {
   bool enable_rgb_{true};
   bool enable_depth_{true};
   bool enable_viewer_{true};
+  int rgb_downsample_{1};
+  int depth_downsample_{1};
+  int ir_downsample_{1};
   std::string config_path_;
   std::string robot_ip_;
   std::string depth_topic_;

@@ -2,6 +2,7 @@
 
 #include "plugin_interface.h"
 #include "message_system.h"
+#include "plugins/gripper_worker.h"
 
 #include <array>
 #include <atomic>
@@ -24,7 +25,7 @@ namespace robo_lab {
 class FrankaPlugin : public Plugin {
  public:
   FrankaPlugin() = default;
-  ~FrankaPlugin() override = default;
+  ~FrankaPlugin() override;
 
   bool initialize(const std::string& config_path) override;
   void run() override;
@@ -53,6 +54,7 @@ class FrankaPlugin : public Plugin {
   std::vector<double> kd_gains_;
   std::atomic<bool> stop_{false};
   std::atomic<ControlState> control_state_{ControlState::kInit};
+  std::mutex control_transition_mutex_;
   std::array<double, 7> arm_home_;
 
   std::unique_ptr<MessageSystem> message_system_;
@@ -71,8 +73,6 @@ class FrankaPlugin : public Plugin {
   void enter_inference_from_control(const franka::RobotState& robot_state);
   static const char* control_state_name(ControlState state);
   void gripper_state_loop();
-  void gripper_action_loop();
-  void gripper_interrupt_loop();
   void stop_gripper_worker();
   uint32_t state_sequence_{0};
 
@@ -93,23 +93,13 @@ class FrankaPlugin : public Plugin {
   double gripper_closed_width_{0.0};
   double gripper_speed_{0.1};
   double gripper_close_threshold_{0.5};
+  GripperWorker::Options gripper_options_;
+  std::unique_ptr<GripperWorker> gripper_worker_;
   std::thread gripper_state_thread_;
-  std::thread gripper_action_thread_;
-  std::thread gripper_interrupt_thread_;
-  std::mutex gripper_mutex_;
-  std::condition_variable gripper_action_cv_;
-  std::condition_variable gripper_interrupt_cv_;
-  bool gripper_stop_{false};
-  bool has_gripper_target_{false};
-  bool gripper_target_closed_{false};
-  bool gripper_move_in_progress_{false};
-  bool gripper_active_closed_{false};
-  bool has_gripper_state_{false};
-  double gripper_state_width_{0.08};
-  double gripper_target_close_norm_{0.0};
-  uint64_t gripper_target_seq_{0};
-  uint64_t gripper_active_seq_{0};
-  uint64_t gripper_stop_requested_seq_{0};
+  std::mutex gripper_lifecycle_mutex_;
+  std::atomic<bool> gripper_reader_stop_{true};
+  std::mutex gripper_reader_mutex_;
+  std::condition_variable gripper_reader_cv_;
 
   // Safety limits for joint position change per step
   static constexpr double kMaxJointStep = 0.0005;  // rad per control cycle (~1ms) = 0.5 rad/s

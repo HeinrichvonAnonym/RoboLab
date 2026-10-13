@@ -5,6 +5,13 @@ topic:
 
 fps: 20
 
+# 1 preserves native resolution; N copies pixels at (x*N, y*N).
+# Geometry consumers must scale focal lengths and principal points by 1/N.
+downsample:
+  rgb: 2
+  depth: 2
+  ir: 2
+
 enable_rgb: true
 enable_depth: true
 enable_viewer: false

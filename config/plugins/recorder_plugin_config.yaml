@@ -3,9 +3,9 @@ topic:
   - franka/state
   - franka/cartesian_dpose
   - HumanState
-  - kinec2/depth
+  # - kinec2/depth
   - kinec2/rgb
-  - realsense/depth
+  # - realsense/depth
   - realsense/rgb
 
 # Map each topic to its protobuf message type for structured HDF5 storage.
@@ -16,9 +16,9 @@ topic_proto:
   franka/state: franka.RobotObservation
   franka/cartesian_dpose: franka.CartesianDPoseCmd
   HumanState: demo_inference.Observation
-  kinec2/depth: kinect.rgbImage
+  # kinec2/depth: kinect.rgbImage
   kinec2/rgb: kinect.rgbImage
-  realsense/depth: kinect.rgbImage
+  # realsense/depth: kinect.rgbImage
   realsense/rgb: kinect.rgbImage
 
 record_frequency: 30

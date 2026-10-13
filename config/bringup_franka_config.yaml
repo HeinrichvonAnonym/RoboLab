@@ -12,17 +12,17 @@ plugins:
     config: config/plugins/franka_plugin_config.yaml
     lib: ./build/plugins/libfranka_plugin.so
 
-  # - name: kinect_plugin
-  #   config: config/plugins/kinect_plugin_config.yaml
-  #   lib: ./build/plugins/libkinect_plugin.so
+  - name: kinect_plugin
+    config: config/plugins/kinect_plugin_config.yaml
+    lib: ./build/plugins/libkinect_plugin.so
 
   - name: realsense_plugin
     config: config/plugins/realsense_plugin_config.yaml
     lib: ./build/plugins/librealsense_plugin.so
 
-  - name: ros_bridge_plugin
-    config: config/plugins/ros_bridge_plugin_config.yaml
-    lib: ./build/plugins/libros_bridge_plugin.so
+  # - name: ros_bridge_plugin
+  #   config: config/plugins/ros_bridge_plugin_config.yaml
+  #   lib: ./build/plugins/libros_bridge_plugin.so
 
   # Teleop publisher: reads keys from stdin, publishes franka.CartesianDPoseCmd
   # on `franka/cartesian_dpose` per press. Recorder picks it up below.

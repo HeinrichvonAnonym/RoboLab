@@ -290,11 +290,19 @@ def show_frames(rgb_frame: CameraFrame, depth_frame: CameraFrame) -> int:
     return int(cv2.waitKey(1) & 0xFF)
 
 
+def show_rgb_frame(frame: CameraFrame) -> int:
+    import cv2
+
+    cv2.imshow(f"H5 RGB: {frame.key}", _annotate(frame_to_bgr(frame), f"{frame.key} frame={frame.index}"))
+    return int(cv2.waitKey(1) & 0xFF)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Read recorder_plugin HDF5 camera frames.")
     parser.add_argument("--h5", default=DEFAULT_H5, help=f"HDF5 file path (default: {DEFAULT_H5})")
     parser.add_argument("--rgb-key", default="realsense/rgb", help="RGB key or group name.")
     parser.add_argument("--depth-key", default="realsense/depth", help="Depth key or group name.")
+    parser.add_argument("--rgb-only", action="store_true", help="Read/play RGB without requiring a depth stream.")
     parser.add_argument("--index", type=int, default=0, help="Frame index to read.")
     parser.add_argument("--list", action="store_true", help="List HDF5 groups and datasets.")
     parser.add_argument("--play", action="store_true", help="Play RGB/depth frames from --index onward.")
@@ -314,13 +322,18 @@ def main() -> int:
         args.play = False
 
     if not args.play:
-        rgb_frame, depth_frame = loader.read_pair(args.rgb_key, args.depth_key, args.index)
+        rgb_frame = loader.read_frame(args.rgb_key, args.index)
         print_frame_summary("rgb", rgb_frame)
-        print_frame_summary("depth", depth_frame)
+        if not args.rgb_only:
+            depth_frame = loader.read_frame(args.depth_key, args.index)
+            print_frame_summary("depth", depth_frame)
         if args.no_gui:
             return 0
 
-        show_frames(rgb_frame, depth_frame)
+        if args.rgb_only:
+            show_rgb_frame(rgb_frame)
+        else:
+            show_frames(rgb_frame, depth_frame)
         print("Press any key in an OpenCV window to exit.")
         import cv2
 
@@ -331,16 +344,19 @@ def main() -> int:
     import cv2
 
     rgb_count = loader.frame_count(args.rgb_key)
-    depth_count = loader.frame_count(args.depth_key)
-    end = min(rgb_count, depth_count)
+    end = rgb_count if args.rgb_only else min(rgb_count, loader.frame_count(args.depth_key))
     delay_s = 1.0 / max(args.fps, 1e-6)
-    print(f"Playing {args.rgb_key} + {args.depth_key}: frames {args.index}..{end - 1}")
+    streams = args.rgb_key if args.rgb_only else f"{args.rgb_key} + {args.depth_key}"
+    print(f"Playing {streams}: frames {args.index}..{end - 1}", flush=True)
 
     index = max(0, args.index)
     while index < end:
         start = time.monotonic()
-        rgb_frame, depth_frame = loader.read_pair(args.rgb_key, args.depth_key, index)
-        key = show_frames(rgb_frame, depth_frame)
+        if args.rgb_only:
+            key = show_rgb_frame(loader.read_frame(args.rgb_key, index))
+        else:
+            rgb_frame, depth_frame = loader.read_pair(args.rgb_key, args.depth_key, index)
+            key = show_frames(rgb_frame, depth_frame)
         if key in (27, ord("q")):
             break
         index += 1

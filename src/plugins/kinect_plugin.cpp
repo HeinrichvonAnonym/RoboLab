@@ -1,4 +1,5 @@
 #include "plugins/kinect_plugin.h"
+#include "plugins/kinect_sampling.h"
 
 #include <chrono>
 #include <ctime>
@@ -17,30 +18,6 @@
 
 namespace robo_lab {
 
-bool KinectPlugin::publish_frame(libfreenect2::Frame* frame,
-                                 const std::string& topic,
-                                 int32_t proto_type) {
-  if (frame == nullptr || topic.empty()) {
-    return false;
-  }
-  if (!message_system_ || !message_system_->is_open()) {
-    return false;
-  }
-
-  const size_t img_size = frame->width * frame->height * frame->bytes_per_pixel;
-  kinect::rgbImage msg;
-  msg.set_width(static_cast<int32_t>(frame->width));
-  msg.set_height(static_cast<int32_t>(frame->height));
-  msg.set_channels(static_cast<int32_t>(frame->bytes_per_pixel));
-  msg.set_step(static_cast<int32_t>(frame->width * frame->bytes_per_pixel));
-  msg.set_type(proto_type);
-  msg.set_image(frame->data, img_size);
-
-  std::string payload;
-  msg.SerializeToString(&payload);
-  return message_system_->publish(topic, payload);
-}
-
 void KinectPlugin::update_viewer(libfreenect2::Frame* rgb,
                                  libfreenect2::Frame* ir,
                                  libfreenect2::Frame* depth) {
@@ -54,7 +31,7 @@ void KinectPlugin::update_viewer(libfreenect2::Frame* rgb,
     viewer_->addFrame("ir", ir);
   }
   if (rgb) {
-    viewer_->addFrame("rgb", rgb);
+    viewer_->addFrame("RGB", rgb);  // Viewer selects its color shader with this key.
   }
   (void)viewer_->render();
 }
@@ -107,6 +84,39 @@ bool KinectPlugin::initialize(const std::string& config_path) {
     if (root["enable_viewer"]) {
       enable_viewer_ = root["enable_viewer"].as<bool>();
     }
+    rgb_downsample_ = depth_downsample_ = ir_downsample_ = 1;
+    try {
+      const YAML::Node downsample = root["downsample"];
+      if (downsample.IsDefined()) {
+        if (!downsample.IsMap()) {
+          std::cerr << "kinect_plugin: downsample must be a map of positive integers\n";
+          return false;
+        }
+        auto read_factor = [&](const char* stream, int& factor) {
+          const YAML::Node value = downsample[stream];
+          if (value.IsDefined()) {
+            factor = value.as<int>();
+          }
+          if (factor <= 0) {
+            std::cerr << "kinect_plugin: downsample." << stream
+                      << " must be a positive integer\n";
+            return false;
+          }
+          return true;
+        };
+        if (!read_factor("rgb", rgb_downsample_) ||
+            !read_factor("depth", depth_downsample_) ||
+            !read_factor("ir", ir_downsample_)) {
+          return false;
+        }
+      }
+    } catch (const YAML::Exception& error) {
+      std::cerr << "kinect_plugin: invalid downsample configuration (expected positive integers): "
+                << error.what() << '\n';
+      return false;
+    }
+    std::cout << "kinect_plugin: downsample rgb=" << rgb_downsample_
+              << " depth=" << depth_downsample_ << " ir=" << ir_downsample_ << '\n';
     if (!enable_rgb_ && !enable_depth_) {
       std::cerr << "kinect_plugin: both enable_rgb and enable_depth are false\n";
       return false;
@@ -141,16 +151,24 @@ void KinectPlugin::run() {
   // Keep device/USB errors visible; LIBFREENECT2_LOGGER_LEVEL controls verbosity.
   libfreenect2::setGlobalLogger(libfreenect2::createConsoleLoggerWithDefaultLevel());
 
-  // This loop is intentionally structured like libfreenect2's Protonect.cpp:
-  // wait for frames -> optional viewer update -> copy payload for publish -> release -> publish.
-  struct FramePayloadCopy {
-    int32_t width = 0;
-    int32_t height = 0;
-    int32_t channels = 0;  // bytes_per_pixel
-    int32_t step = 0;
-    int32_t proto_type = 0;
-    std::string data;
+  // Keep the existing capture and reconnect sequence. Only copy sampled pixels
+  // after wait succeeds, then release native frames before rendering/publishing.
+  struct FrameRelease {
+    libfreenect2::SyncMultiFrameListener& listener;
+    libfreenect2::FrameMap& frames;
+    bool active = true;
+    ~FrameRelease() { if (active) listener.release(frames); }
+    void release() { listener.release(frames); active = false; }
   };
+  kinect_detail::SampledImage rgb_copy, depth_copy, ir_copy;
+  std::string payload;
+
+  // Frame's external-data constructor leaves rawdata null; these views never
+  // free the sampled strings. Their addresses remain valid throughout run().
+  unsigned char unused = 0;
+  libfreenect2::Frame rgb_view(0, 0, 0, &unused);
+  libfreenect2::Frame depth_view(0, 0, 0, &unused);
+  libfreenect2::Frame ir_view(0, 0, 0, &unused);
 
   if (message_system_ && !message_system_->is_open()) {
     std::cerr << "kinect_plugin: Zenoh not open yet; will skip publishes until it is.\n";
@@ -256,6 +274,7 @@ void KinectPlugin::run() {
     bool reconnect_requested = false;
 
     int frame_count = 0;
+    bool output_sizes_logged = false;
 
     while (!stop_) {
       libfreenect2::FrameMap frames;
@@ -277,6 +296,7 @@ void KinectPlugin::run() {
         }
         continue;
       }
+      FrameRelease frame_release{*listener, frames};
 
       consecutive_timeouts = 0;
 
@@ -299,52 +319,68 @@ void KinectPlugin::run() {
         depth = it_depth->second;
       }
 
-      if (enable_viewer_) {
-      update_viewer(rgb, ir, depth);
-      }
-
       const auto now = std::chrono::steady_clock::now();
       const bool do_publish = (now - last_pub) >= std::chrono::milliseconds(kPublishEveryMs);
 
       // Copy frame data for protobuf publishing, then release listener frames.
       // This prevents heavy protobuf serialization from stalling capture.
-      FramePayloadCopy rgb_copy;
-      FramePayloadCopy depth_copy;
-      FramePayloadCopy ir_copy;
       bool have_rgb_copy = false;
       bool have_depth_copy = false;
       bool have_ir_copy = false;
 
       auto copy_one = [&](libfreenect2::Frame* f,
                            int32_t proto_type,
-                           FramePayloadCopy* out,
+                           int factor, const char* name,
+                           kinect_detail::SampledImage* out,
+                           libfreenect2::Frame* view,
                            bool* have_out) {
         if (!f) {
           return;
         }
-        out->width = static_cast<int32_t>(f->width);
-        out->height = static_cast<int32_t>(f->height);
-        out->channels = static_cast<int32_t>(f->bytes_per_pixel);
-        out->step = static_cast<int32_t>(f->width * f->bytes_per_pixel);
-        out->proto_type = proto_type;
-
-        const size_t img_size = f->width * f->height * f->bytes_per_pixel;
-        out->data.assign(reinterpret_cast<const char*>(f->data), img_size);
+        kinect_detail::sample_image(f->data, f->width, f->height,
+                                   f->bytes_per_pixel, factor, proto_type, *out);
+        view->width = out->width;
+        view->height = out->height;
+        view->bytes_per_pixel = out->channels;
+        view->data = reinterpret_cast<unsigned char*>(&out->data[0]);
+        view->format = f->format;
         *have_out = true;
+        if (!output_sizes_logged) {
+          std::cout << "kinect_plugin: " << name << " downsample=" << factor
+                    << " " << f->width << "x" << f->height << " -> "
+                    << out->width << "x" << out->height
+                    << " step=" << out->step << " bytes=" << out->data.size() << '\n';
+        }
       };
 
-      if (do_publish && message_system_ && message_system_->is_open()) {
-        if (enable_rgb_) {
-          copy_one(rgb, static_cast<int32_t>(libfreenect2::Frame::Color), &rgb_copy, &have_rgb_copy);
+      const bool can_publish = message_system_ && message_system_->is_open();
+      if (do_publish && (can_publish || enable_viewer_)) {
+        try {
+          if (enable_rgb_) {
+            copy_one(rgb, static_cast<int32_t>(libfreenect2::Frame::Color),
+                     rgb_downsample_, "rgb", &rgb_copy, &rgb_view, &have_rgb_copy);
+          }
+          if (enable_depth_) {
+            copy_one(depth, static_cast<int32_t>(libfreenect2::Frame::Depth),
+                     depth_downsample_, "depth", &depth_copy, &depth_view, &have_depth_copy);
+            copy_one(ir, static_cast<int32_t>(libfreenect2::Frame::Ir),
+                     ir_downsample_, "ir", &ir_copy, &ir_view, &have_ir_copy);
+          }
+        } catch (const std::exception& error) {
+          std::cerr << "kinect_plugin: failed to copy sampled frame: " << error.what() << '\n';
+          continue;  // FrameRelease still releases the acquired native frames.
         }
-        if (enable_depth_) {
-          copy_one(depth, static_cast<int32_t>(libfreenect2::Frame::Depth), &depth_copy, &have_depth_copy);
-          copy_one(ir, static_cast<int32_t>(libfreenect2::Frame::Ir), &ir_copy, &have_ir_copy);
-        }
+        output_sizes_logged = true;
         last_pub = now;
       }
 
-      listener->release(frames);
+      frame_release.release();
+
+      if (do_publish && enable_viewer_) {
+        update_viewer(have_rgb_copy ? &rgb_view : nullptr,
+                      have_ir_copy ? &ir_view : nullptr,
+                      have_depth_copy ? &depth_view : nullptr);
+      }
 
       // Publish after release (Protonect doesn't publish, so this is our best-effort async-ish path).
       if (do_publish && message_system_ && message_system_->is_open()) {
@@ -362,43 +398,20 @@ void KinectPlugin::run() {
                       << std::endl;
           }
         }
+        auto publish_copy = [&](const kinect_detail::SampledImage& image,
+                                const std::string& topic) {
+          kinect_detail::serialize_image(image, payload);
+          (void)message_system_->publish(topic, payload);
+        };
         if (enable_rgb_ && have_rgb_copy) {
-          kinect::rgbImage msg;
-          msg.set_width(rgb_copy.width);
-          msg.set_height(rgb_copy.height);
-          msg.set_channels(rgb_copy.channels);
-          msg.set_step(rgb_copy.step);
-          msg.set_type(rgb_copy.proto_type);
-          msg.set_image(rgb_copy.data.data(), rgb_copy.data.size());
-          std::string payload;
-          msg.SerializeToString(&payload);
-          (void)message_system_->publish(rgb_topic_, payload);
+          publish_copy(rgb_copy, rgb_topic_);
         }
-
         if (enable_depth_) {
           if (have_depth_copy) {
-            kinect::rgbImage msg;
-            msg.set_width(depth_copy.width);
-            msg.set_height(depth_copy.height);
-            msg.set_channels(depth_copy.channels);
-            msg.set_step(depth_copy.step);
-            msg.set_type(depth_copy.proto_type);
-            msg.set_image(depth_copy.data.data(), depth_copy.data.size());
-            std::string payload;
-            msg.SerializeToString(&payload);
-            (void)message_system_->publish(depth_topic_, payload);
+            publish_copy(depth_copy, depth_topic_);
           }
           if (have_ir_copy) {
-            kinect::rgbImage msg;
-            msg.set_width(ir_copy.width);
-            msg.set_height(ir_copy.height);
-            msg.set_channels(ir_copy.channels);
-            msg.set_step(ir_copy.step);
-            msg.set_type(ir_copy.proto_type);
-            msg.set_image(ir_copy.data.data(), ir_copy.data.size());
-            std::string payload;
-            msg.SerializeToString(&payload);
-            (void)message_system_->publish(ir_topic_, payload);
+            publish_copy(ir_copy, ir_topic_);
           }
         }
       }

@@ -6,6 +6,12 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+option(ROBOLAB_BUILD_GRIPPER_TESTS "Build hardware-free gripper worker checks" OFF)
+option(ROBOLAB_BUILD_KINECT_TESTS "Build hardware-free Kinect sampling checks" OFF)
+if(ROBOLAB_BUILD_GRIPPER_TESTS OR ROBOLAB_BUILD_KINECT_TESTS)
+  enable_testing()
+endif()
+
 # C++ code uses [zenoh-c](https://github.com/eclipse-zenoh/zenoh-c) (CMake + zenoh.h), not the Rust `zenoh` repo.
 # Leave ROBOLAB_ZENOHC_ROOT empty to auto-pick the first existing path below.
 set(ROBOLAB_ZENOHC_ROOT

@@ -1,7 +1,17 @@
 # yaml-cpp is resolved in parent src/CMakeLists.txt
 
 # Franka plugin
-add_library(franka_plugin MODULE franka_plugin.cpp)
+add_library(franka_plugin MODULE franka_plugin.cpp gripper_worker.cpp)
+
+# Hardware-free tests exercise the same worker compiled into the plugin.
+if(ROBOLAB_BUILD_GRIPPER_TESTS)
+  find_package(GTest REQUIRED)
+  add_executable(gripper_worker_test ../../tests/gripper_worker_test.cpp gripper_worker.cpp)
+  target_include_directories(gripper_worker_test PRIVATE "${CMAKE_SOURCE_DIR}/include")
+  target_link_libraries(gripper_worker_test PRIVATE GTest::GTest Threads::Threads)
+  target_compile_features(gripper_worker_test PRIVATE cxx_std_17)
+  add_test(NAME gripper_worker COMMAND gripper_worker_test)
+endif()
 
 # Eigen
 find_package(Eigen3 REQUIRED)
@@ -60,6 +70,15 @@ set_target_properties(
              BUILD_RPATH "${CMAKE_BINARY_DIR}/src;$<TARGET_FILE_DIR:freenect2>")
 
 target_compile_features(kinect_plugin PRIVATE cxx_std_17)
+
+if(ROBOLAB_BUILD_KINECT_TESTS)
+  find_package(GTest REQUIRED)
+  add_executable(kinect_sampling_test ../../tests/kinect_sampling_test.cpp)
+  target_include_directories(kinect_sampling_test PRIVATE "${CMAKE_SOURCE_DIR}/include")
+  target_link_libraries(kinect_sampling_test PRIVATE robo_lab_proto GTest::GTest Threads::Threads)
+  target_compile_features(kinect_sampling_test PRIVATE cxx_std_17)
+  add_test(NAME kinect_sampling COMMAND kinect_sampling_test)
+endif()
 
 # Realsense plugin
 if(TARGET realsense2)
