@@ -1,0 +1,28 @@
+policy: fake_circle
+checkpoint_path: null
+robot_config: config/plugins/franka_plugin_config.yaml
+kinematics_config: config/cartesian_control/cartesian_control_config.yaml
+prompt: "Draw one circle from home while keeping orientation and gripper unchanged."
+frequency: 30
+chunk_size: 50
+max_age_ms: 200
+# Skip a tick while a sample is missing or older than max_age_ms.
+# Latch a fault only after this many consecutive seconds.
+stale_fault_s: 1.0
+inference_timeout_s: 5.0
+home_tolerance_rad: 0.05
+position_tolerance_m: 0.001
+orientation_tolerance_rad: 0.008726646259971648  # 0.5 degree
+# Below the existing low-level 0.5 rad/s command slew limit.
+max_joint_speed: 0.4
+circle:
+  radius_m: 0.03
+  duration_s: 10.0  # seconds per turn; quintic time scaling over all turns
+  turns: 1
+  plane: xy  # ordered axes: xy, yz, zx
+topics:
+  kinec2: kinec2/rgb
+  realsense: realsense/rgb
+  state: franka/state
+  state_machine: franka/state_machine
+  command: franka/command

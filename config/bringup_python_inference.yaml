@@ -1,0 +1,18 @@
+# Run Python inference FIRST, then launch this bringup in an interactive TTY.
+# Deliberately omit cartesian_control_plugin: one action publisher only.
+plugins:
+  - name: franka_plugin
+    config: config/plugins/franka_plugin_config.yaml
+    lib: ./build/plugins/libfranka_plugin.so
+  - name: kinect_plugin
+    config: config/plugins/kinect_plugin_config.yaml
+    lib: ./build/plugins/libkinect_plugin.so
+  - name: realsense_plugin
+    config: config/plugins/realsense_plugin_config.yaml
+    lib: ./build/plugins/librealsense_plugin.so
+  - name: keyboard_plugin
+    config: config/plugins/keyboard_plugin_config.yaml
+    lib: ./build/plugins/libkeyboard_plugin.so
+  - name: recorder_plugin
+    config: config/plugins/recorder_plugin_config.yaml
+    lib: ./build/plugins/librecorder_plugin.so

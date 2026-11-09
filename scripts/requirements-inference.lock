@@ -1,0 +1,8 @@
+eclipse-zenoh==1.5.1
+grpcio==1.73.1
+grpcio-tools==1.73.1
+h5py==3.13.0
+numpy==2.2.6
+protobuf==6.31.1
+PyYAML==6.0.2
+setuptools==80.9.0

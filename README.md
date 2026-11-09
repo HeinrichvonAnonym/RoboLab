@@ -113,6 +113,18 @@ Always run from the **repo root** (or use `start.sh`, which `cd`s there) so `./b
 
 ---
 
+## H5 dataset conversion and review
+
+Use `scripts/convert_h5_to_lerobot.py` for headless LeRobot v3 conversion, or
+`scripts/review_h5.py` for dual-camera browser playback and clip exclusion.
+See [setup, commands, synchronization and editing rules](scripts/README_lerobot.md).
+
+## Python inference (Franka, Kinect + RealSense)
+
+The CPU mock policy generates 50-step, 8D absolute joint/gripper targets and
+executes them over Zenoh at 30 Hz, gated by the existing F2 state machine.
+See [setup, offline verification, dedicated bringup and hardware acceptance](scripts/README_python_inference.md).
+
 ## License / third party
 
 Vendored libraries under `third_party/` keep their respective licenses. See each upstream project for details.

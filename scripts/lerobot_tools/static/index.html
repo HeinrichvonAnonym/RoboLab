@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>roboLab · H5 裁剪工作台</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <aside>
+    <div class="brand"><span class="dot"></span> roboLab <small>DATA REVIEW</small></div>
+    <h1>录制工作台</h1>
+    <p id="selection" class="muted">正在扫描录制…</p>
+    <div class="filter"><input id="search" placeholder="搜索录制文件…" aria-label="搜索录制"><label><input type="checkbox" id="validOnly"> 仅有效</label></div>
+    <nav id="recordings" aria-label="录制列表"></nav>
+    <div class="aside-foot">原始 H5 只读 · 时间为录制内秒数<br>选区首尾帧均删除</div>
+  </aside>
+  <main>
+    <header><div><div class="eyebrow">H5 → LEROBOT V3</div><h2 id="title">选择一条录制</h2><p id="subtitle" class="muted">双路 RGB · 8 维 action · 连续片段导出</p></div>
+      <div class="header-actions"><span id="saved" class="pill">已保存</span><button id="reload" title="放弃未保存编辑，重新载入方案">重新载入</button><button id="save" class="primary">保存方案</button></div>
+    </header>
+    <div id="error" class="error" role="alert" hidden></div>
+    <section class="videos" aria-label="同步相机画面">
+      <figure><figcaption><span>KINECT · RGB</span><span id="kinectAge">—</span></figcaption><div class="image-wrap"><img id="kinec2" alt="Kinect RGB"><span class="placeholder">选择录制后显示画面</span></div></figure>
+      <figure><figcaption><span>REALSENSE · RGB</span><span id="realsenseAge">—</span></figcaption><div class="image-wrap"><img id="realsense" alt="RealSense RGB"><span class="placeholder">选择录制后显示画面</span></div></figure>
+    </section>
+    <section class="transport card">
+      <div class="play-row"><button id="prev" aria-label="上一帧">←</button><button id="play" class="primary" disabled>播放</button><button id="next" aria-label="下一帧">→</button><span id="time" class="mono">0.000 / 0.000 s</span><span id="frame" class="muted">—</span><label class="speed">播放倍速 <input id="speed" type="number" min="0.25" max="4" step="0.25" value="1"> ×</label></div>
+      <div id="ruler"><canvas id="selectionCanvas"></canvas><input id="seek" type="range" min="0" max="0" value="0" step="1" aria-label="播放进度"><div class="selection-markers" data-selection-markers aria-label="待选区间端点"></div></div>
+      <div class="transport-foot"><span id="clipInfo">所有帧保留</span><span id="syncInfo" class="muted"></span></div>
+    </section>
+    <section class="editor card">
+      <div><h3>剔除区间</h3><p class="muted">暂停后定位起止帧。区间内数据会删除，前后保留部分分别导出。</p></div>
+      <div class="edit-row"><label>Start <input id="start" type="number" min="0" step="0.001" placeholder="秒"></label><button id="markStart">标记当前位置</button><label>End <input id="end" type="number" min="0" step="0.001" placeholder="秒"></label><button id="markEnd">标记当前位置</button><button id="addClip" class="danger">添加删除区间</button><button id="undo">撤销</button><button id="drop" class="danger subtle">剔除整条</button></div>
+      <div id="clips" class="clip-list"></div>
+    </section>
+    <section class="actions card"><div class="section-title"><h3>Action position</h3><span class="muted">关节 1–7：rad · 夹爪：0–1，1 为闭合</span></div><div id="charts"></div></section>
+    <footer class="card"><div><h3>LeRobot 导出</h3><p id="output" class="mono muted"></p><p id="exportStatus">正在读取导出状态…</p><progress id="progress" max="1" value="0" hidden></progress></div><button id="export" class="primary">导出已保存方案</button></footer>
+  </main>
+</body>
+</html>

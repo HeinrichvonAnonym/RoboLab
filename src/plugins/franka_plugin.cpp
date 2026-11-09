@@ -646,17 +646,24 @@ void FrankaPlugin::run() {
         },
         true,
         1000.0);
-      } catch (...) {
+      } catch (const std::exception& e) {
+        // libfranka throws franka::Exception, a std::exception. exception.h
+        // cannot be included in this file: both it and franka.pb.h define
+        // franka::RobotCommand.
+        std::cerr << "[FrankaPlugin] control exception: " << e.what() << '\n';
         if (gripper_worker_) gripper_worker_->set_enabled(false);
-        const franka::RobotState robot_state = robot_->readOnce();
-        std::chrono::steady_clock::time_point end_time = std::chrono::steady_clock::now();
-        if(end_time - start_time > std::chrono::milliseconds(20)){
-          start_time = end_time;
-          if (!publish_state(robot_state)){
-            std::cout << "franka_plugin: publish_state failed\n"<<std::endl;
-            continue;
-          }
+        try {
+          robot_->automaticErrorRecovery();
+          std::cout << "[FrankaPlugin] automatic error recovery succeeded\n";
+        } catch (const std::exception& recovery_error) {
+          std::cerr << "[FrankaPlugin] automatic error recovery failed: "
+                    << recovery_error.what() << '\n';
+          std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
+      } catch (...) {
+        std::cerr << "[FrankaPlugin] control exception: unknown\n";
+        if (gripper_worker_) gripper_worker_->set_enabled(false);
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
       }
   }
 

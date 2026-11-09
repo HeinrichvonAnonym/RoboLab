@@ -1,0 +1,34 @@
+policy: lingbot_vla_v2
+checkpoint_path: ckpts/hf_ckpt
+lingbot_root: /home/heinrich/lingbot-vla-v2
+lingbot_cli: config/inference/franka_lingbotvla_cli.yaml
+lingbot_robot_config: config/inference/franka_real.yaml
+norm_stats: config/inference/franka_real_norm_stats.json
+robot_config: config/plugins/franka_plugin_config.yaml
+kinematics_config: config/cartesian_control/cartesian_control_config.yaml
+prompt: "franka manipulation"
+frequency: 30
+chunk_size: 50
+max_age_ms: 200
+# Skip a tick while a sample is missing or older than max_age_ms.
+# Latch a fault only after this many consecutive seconds.
+stale_fault_s: 1.0
+inference_timeout_s: 60.0
+# Loading the 6B checkpoint exceeds the circle policy's 10s startup budget.
+policy_init_timeout_s: 300
+home_tolerance_rad: 0.05
+position_tolerance_m: 0.001
+orientation_tolerance_rad: 0.008726646259971648  # 0.5 degree
+# Below the existing low-level 0.5 rad/s command slew limit.
+max_joint_speed: 0.4
+circle:
+  radius_m: 0.03
+  duration_s: 10.0  # seconds per turn; quintic time scaling over all turns
+  turns: 1
+  plane: xy  # ordered axes: xy, yz, zx
+topics:
+  kinec2: kinec2/rgb
+  realsense: realsense/rgb
+  state: franka/state
+  state_machine: franka/state_machine
+  command: franka/command

@@ -32,8 +32,12 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.venv-lerobot/
+.venv-inference/
+outputs/
 
 ros_ws/build
 ros_ws/devel
 *.h5
 
+ckpts

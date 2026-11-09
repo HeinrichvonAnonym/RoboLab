@@ -1,0 +1,37 @@
+# Franka single arm (7 joints + gripper), LeRobot v3.0, 15 fps.
+# Cameras: kinec2 = external third-person view, realsense = wrist view.
+states:
+  - observation.state.arm.position:
+      origin_keys:
+        - observation.state:       # joint_1 ... joint_7
+            start: 0
+            end: 7
+
+  - observation.state.effector.position:
+      origin_keys:
+        - observation.state:       # gripper_close
+            start: 7
+            end: 8
+
+actions:
+  - action.arm.position:
+      origin_keys:
+        - action:
+            start: 0
+            end: 7
+      subtract_state: true         # relative joint actions
+
+  - action.effector.position:
+      origin_keys:
+        - action:
+            start: 7
+            end: 8
+      subtract_state: false
+
+images:
+  - observation.images.camera_top:
+      origin_keys: observation.images.kinec2
+  - observation.images.camera_wrist_left:
+      origin_keys: observation.images.realsense
+
+norm_stats: config/inference/franka_real_norm_stats.json

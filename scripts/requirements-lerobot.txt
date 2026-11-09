@@ -1,0 +1,11 @@
+# Python 3.12. Install CPU torch using uv --torch-backend cpu (see README).
+lerobot[dataset]==0.6.1
+torch==2.7.1
+torchvision==0.22.1
+torchcodec==0.3.0
+numpy==2.2.6
+h5py==3.13.0
+pillow==11.2.1
+fastapi==0.115.12
+uvicorn==0.34.2
+httpx==0.28.1
