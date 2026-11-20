@@ -12,9 +12,10 @@ namespace robo_lab {
 // interpolation against the original wall-clock timestamps.
 //
 // Expected datasets (created by recorder_plugin.cpp):
-//   franka_state/joints_position : float64, shape [N, 7]
+//   franka_state/joints_position : float64, shape [N, 7] or [N, 8]
 //   franka_state/timestamps_ns   : int64,   shape [N]
 //
+// The optional eighth column is gripper state; replay still commands seven arm joints.
 // All other fields (velocity, effort, sys_time, ...) are ignored: this stage
 // only replays joint positions.
 class FrankaReplayer {

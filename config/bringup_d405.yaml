@@ -1,0 +1,5 @@
+# Camera only; no robot, recorder, ROS bridge, or keyboard control.
+plugins:
+  - name: realsense_plugin
+    config: config/plugins/realsense_d405_plugin_config.yaml
+    lib: ./build/plugins/librealsense_plugin.so

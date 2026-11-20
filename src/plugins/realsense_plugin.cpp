@@ -1,204 +1,129 @@
 #include "plugins/realsense_plugin.h"
 
-#include <algorithm>
 #include <chrono>
 #include <iostream>
 #include <thread>
 
-#include <yaml-cpp/yaml.h>
-
 namespace robo_lab {
+namespace {
+void fill_intrinsics(const rs2::stream_profile& profile, camera::Intrinsics* out) {
+  const auto k=profile.as<rs2::video_stream_profile>().get_intrinsics();
+  out->set_width(k.width); out->set_height(k.height); out->set_fx(k.fx); out->set_fy(k.fy);
+  out->set_ppx(k.ppx); out->set_ppy(k.ppy); out->set_distortion_model(k.model);
+  for (float coefficient : k.coeffs) out->add_coefficients(coefficient);
+}
+void fill_image(const rs2::video_frame& frame, camera::Image::Encoding encoding, camera::Image* out) {
+  out->set_width(frame.get_width()); out->set_height(frame.get_height());
+  out->set_stride(frame.get_stride_in_bytes()); out->set_encoding(encoding);
+  out->set_data(frame.get_data(),frame.get_data_size());
+  out->set_frame_number(frame.get_frame_number()); out->set_device_timestamp_ms(frame.get_timestamp());
+  out->set_timestamp_domain(frame.get_frame_timestamp_domain());
+}
+}  // namespace
 
-bool RealsensePlugin::publish_frame(const rs2::video_frame& frame,
-                                    const std::string& topic,
-                                    int32_t proto_type) {
-  if (!frame || topic.empty()) {
-    return false;
-  }
-  if (!message_system_ || !message_system_->is_open()) {
-    return false;
-  }
-
+bool RealsensePlugin::publish_frame(const rs2::video_frame& frame,const std::string& topic,int32_t type) {
+  if (!frame || topic.empty()) return true;
   kinect::rgbImage msg;
-  msg.set_width(frame.get_width());
-  msg.set_height(frame.get_height());
-  msg.set_channels(frame.get_bytes_per_pixel());
-  msg.set_step(frame.get_stride_in_bytes());
-  msg.set_type(proto_type);
-  msg.set_image(reinterpret_cast<const char*>(frame.get_data()), frame.get_data_size());
-
+  msg.set_width(frame.get_width()); msg.set_height(frame.get_height());
+  msg.set_channels(frame.get_bytes_per_pixel()); msg.set_step(frame.get_stride_in_bytes());
+  msg.set_type(type); msg.set_image(frame.get_data(),frame.get_data_size());
   std::string payload;
-  msg.SerializeToString(&payload);
-  return message_system_->publish(topic, payload);
+  return msg.SerializeToString(&payload) && message_system_->publish(topic,payload);
 }
 
-bool RealsensePlugin::initialize(const std::string& config_path) {
-  config_path_ = config_path;
-  message_system_ = std::make_unique<MessageSystem>();
-  message_system_->initialize();
-
-  const YAML::Node root = YAML::LoadFile(config_path_);
-  if (!root) {
-    std::cerr << "realsense_plugin: failed to load yaml: " << config_path_ << "\n";
+bool RealsensePlugin::initialize(const std::string& path) {
+  try {
+    config_=camera_support::CaptureConfig::load(YAML::LoadFile(path));
+    stop_=false;
+    message_system_=std::make_unique<MessageSystem>();
+    message_system_->initialize();
+    if (!message_system_->is_open()) throw std::runtime_error("Zenoh session could not be opened");
+    pipeline_=std::make_unique<rs2::pipeline>();
+    return true;
+  } catch (const std::exception& e) {
+    std::cerr << "realsense_plugin: initialization failed: " << e.what() << '\n';
+    if (message_system_) message_system_->close();
     return false;
   }
-
-  if (root["topic"]) {
-    if (root["topic"]["rgb"]) {
-      rgb_topic_ = root["topic"]["rgb"].as<std::string>();
-    }
-    if (root["topic"]["depth"]) {
-      depth_topic_ = root["topic"]["depth"].as<std::string>();
-    }
-    if (root["topic"]["ir"]) {
-      ir_topic_ = root["topic"]["ir"].as<std::string>();
-    }
-  }
-
-  if (root["fps"]) {
-    fps_ = root["fps"].as<float>();
-  }
-  if (root["enable_rgb"]) {
-    enable_rgb_ = root["enable_rgb"].as<bool>();
-  }
-  if (root["enable_depth"]) {
-    enable_depth_ = root["enable_depth"].as<bool>();
-  }
-  if (root["enable_ir"]) {
-    enable_ir_ = root["enable_ir"].as<bool>();
-  }
-  if (root["use_opengl"]) {
-    use_opengl_ = root["use_opengl"].as<bool>();
-  }
-
-  if (!enable_rgb_ && !enable_depth_ && !enable_ir_) {
-    std::cerr << "realsense_plugin: all streams are disabled in config\n";
-    return false;
-  }
-
-  if (fps_ <= 0.0f) {
-    fps_ = 15.0f;
-  }
-
-  pipeline_ = std::make_unique<rs2::pipeline>();
-  return true;
 }
 
 void RealsensePlugin::run() {
-  stop_ = false;
-  running_ = true;
-
-  if (message_system_ && !message_system_->is_open()) {
-    std::cerr << "realsense_plugin: Zenoh not open yet; publish is skipped until available\n";
-  }
-
-  rs2::config cfg;
-  const int stream_fps = std::max(1, static_cast<int>(fps_));
-
-  if (enable_rgb_) {
-    cfg.enable_stream(RS2_STREAM_COLOR, 640, 480, RS2_FORMAT_RGB8, stream_fps);
-  }
-  if (enable_depth_) {
-    cfg.enable_stream(RS2_STREAM_DEPTH, 640, 480, RS2_FORMAT_Z16, stream_fps);
-  }
-  if (enable_ir_) {
-    cfg.enable_stream(RS2_STREAM_INFRARED, 1, 640, 480, RS2_FORMAT_Y8, stream_fps);
-  }
-
+  bool started=false;
+  uint64_t published=0, rejected=0;
   try {
-    std::lock_guard<std::mutex> lk(pipeline_mutex_);
-    if (use_opengl_) {
-      std::cout << "realsense_plugin: OpenGL acceleration requested; using default librealsense backend\n";
+    if (stop_) { message_system_->close(); return; }
+    rs2::config cfg;
+    if (!config_.serial.empty()) cfg.enable_device(config_.serial);
+    if (config_.rgb) cfg.enable_stream(RS2_STREAM_COLOR,config_.width,config_.height,RS2_FORMAT_RGB8,config_.fps);
+    if (config_.depth) cfg.enable_stream(RS2_STREAM_DEPTH,config_.width,config_.height,RS2_FORMAT_Z16,config_.fps);
+    if (config_.ir) cfg.enable_stream(RS2_STREAM_INFRARED,1,config_.width,config_.height,RS2_FORMAT_Y8,config_.fps);
+    if (config_.use_opengl) std::cout << "realsense_plugin: using the default SDK capture backend (legacy use_opengl setting)\n";
+    const auto profile=pipeline_->start(cfg);
+    started=true;
+    const std::string serial=profile.get_device().get_info(RS2_CAMERA_INFO_SERIAL_NUMBER);
+    std::cout << "realsense_plugin: serial=" << serial << " " << config_.width << 'x' << config_.height << '@' << config_.fps << " RGB-D=" << config_.publish_rgbd << std::endl;
+    camera::RgbdFrame packet;
+    packet.set_schema_version(1); packet.set_serial(serial);
+    if (config_.publish_rgbd) {
+      const auto color=profile.get_stream(RS2_STREAM_COLOR), depth=profile.get_stream(RS2_STREAM_DEPTH);
+      fill_intrinsics(color,packet.mutable_color_intrinsics());
+      fill_intrinsics(depth,packet.mutable_depth_intrinsics());
+      const auto extrinsics=depth.get_extrinsics_to(color);
+      for (float x : extrinsics.rotation) packet.mutable_depth_to_color()->add_rotation(x);
+      for (float x : extrinsics.translation) packet.mutable_depth_to_color()->add_translation_m(x);
     }
-    pipeline_->start(cfg);
-    pipeline_started_ = true;
-  } catch (const rs2::error& e) {
-    std::cerr << "realsense_plugin: failed to start pipeline: " << e.what() << "\n";
-    // Cleanup on early-exit path (run() owns message_system lifecycle).
-    if (message_system_) {
-      message_system_->close();
-    }
-    running_ = false;
-    return;
-  }
-
-  const auto publish_period =
-      std::chrono::milliseconds(std::max(1, static_cast<int>(1000.0f / fps_)));
-  auto last_pub = std::chrono::steady_clock::now() - publish_period;
-
-  while (!stop_) {
-    rs2::frameset frames;
-    try {
-      std::lock_guard<std::mutex> lk(pipeline_mutex_);
-      if (!pipeline_) {
-        break;
-      }
+    camera_support::PairGate pairs;
+    auto last_frame=std::chrono::steady_clock::now();
+    auto last_report=last_frame;
+    while (!stop_) {
+      rs2::frameset frames;
       if (!pipeline_->poll_for_frames(&frames)) {
+        if (std::chrono::steady_clock::now()-last_frame > std::chrono::seconds(3))
+          throw std::runtime_error("no frames for 3 seconds; camera disconnected or stalled; reconnect and restart bringup");
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
         continue;
       }
-    } catch (const rs2::error& e) {
-      std::cerr << "realsense_plugin: frame polling error: " << e.what() << "\n";
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
-      continue;
-    }
-
-    const auto now = std::chrono::steady_clock::now();
-    if (now - last_pub < publish_period) {
-      continue;
-    }
-    last_pub = now;
-
-    if (enable_rgb_) {
-      rs2::video_frame color = frames.get_color_frame();
-      (void)publish_frame(color, rgb_topic_, static_cast<int32_t>(RS2_FORMAT_RGB8));
-    }
-    if (enable_depth_) {
-      rs2::depth_frame depth = frames.get_depth_frame();
-      (void)publish_frame(depth, depth_topic_, static_cast<int32_t>(RS2_FORMAT_Z16));
-    }
-    if (enable_ir_) {
-      rs2::video_frame ir = frames.get_infrared_frame(1);
-      (void)publish_frame(ir, ir_topic_, static_cast<int32_t>(RS2_FORMAT_Y8));
-    }
-  }
-
-  // run() owns cleanup: stop pipeline then close Zenoh, so there is never
-  // a concurrent publish() + close() race from the stop() caller thread.
-  if (pipeline_started_.exchange(false)) {
-    std::lock_guard<std::mutex> lk(pipeline_mutex_);
-    if (pipeline_) {
-      try {
-        pipeline_->stop();
-      } catch (...) {
+      last_frame=std::chrono::steady_clock::now();
+      auto color=frames.get_color_frame(); auto depth=frames.get_depth_frame();
+      bool ok=true;
+      if(config_.rgb) ok=publish_frame(color,config_.rgb_topic,RS2_FORMAT_RGB8) && ok;
+      if(config_.depth) ok=publish_frame(depth,config_.depth_topic,RS2_FORMAT_Z16) && ok;
+      if(config_.ir) ok=publish_frame(frames.get_infrared_frame(1),config_.ir_topic,RS2_FORMAT_Y8) && ok;
+      if(config_.publish_rgbd) {
+        if(color && depth) {
+          fill_image(color,camera::Image::RGB8,packet.mutable_color());
+          fill_image(depth,camera::Image::Z16,packet.mutable_depth());
+          packet.set_depth_units_m(depth.get_units());
+          packet.set_host_received_monotonic_ns(std::chrono::duration_cast<std::chrono::nanoseconds>(last_frame.time_since_epoch()).count());
+          if(pairs.accept(packet.color(),packet.depth(),config_.max_pair_skew_ms)) {
+            std::string payload;
+            ok=packet.SerializeToString(&payload) && message_system_->publish(config_.rgbd_topic,payload) && ok;
+            ++published;
+          } else ++rejected;
+        } else ++rejected;
+      }
+      if (!ok) throw std::runtime_error("Zenoh publish failed; check configured topic keys and session");
+      if (last_frame-last_report >= std::chrono::seconds(5)) {
+        std::cout << "realsense_plugin: rgbd_published=" << published << " pairs_rejected=" << rejected << std::endl;
+        last_report=last_frame;
       }
     }
+  } catch (const std::exception& e) {
+    std::cerr << "realsense_plugin: capture stopped: " << e.what()
+              << " (requested serial=" << (config_.serial.empty()?"auto":config_.serial)
+              << " " << config_.width << 'x' << config_.height << '@' << config_.fps
+              << " RGB=" << config_.rgb << " depth=" << config_.depth << " IR=" << config_.ir << ')' << std::endl;
   }
-
-  if (message_system_) {
-    message_system_->close();
-  }
-
-  running_ = false;
+  // Only this thread publishes, stops the pipeline, and closes Zenoh.
+  if (started) { try { pipeline_->stop(); } catch (const std::exception& e) { std::cerr << "realsense_plugin: stop: " << e.what() << '\n'; } }
+  if (message_system_) message_system_->close();
+  std::cout << "realsense_plugin: stopped; rgbd_published=" << published << " pairs_rejected=" << rejected << std::endl;
 }
 
-void RealsensePlugin::stop() {
-  if (stop_.exchange(true)) {
-    return;
-  }
-  std::cout << "realsense_plugin: stopping\n";
-}
-
+void RealsensePlugin::stop() { stop_=true; }
 }  // namespace robo_lab
 
 extern "C" {
-
-ROBO_LAB_PLUGIN_EXPORT robo_lab::Plugin* robo_lab_plugin_create() {
-  return new robo_lab::RealsensePlugin();
-}
-
-ROBO_LAB_PLUGIN_EXPORT void robo_lab_plugin_destroy(robo_lab::Plugin* plugin) {
-  delete plugin;
-}
-
+ROBO_LAB_PLUGIN_EXPORT robo_lab::Plugin* robo_lab_plugin_create() { return new robo_lab::RealsensePlugin(); }
+ROBO_LAB_PLUGIN_EXPORT void robo_lab_plugin_destroy(robo_lab::Plugin* plugin) { delete plugin; }
 }

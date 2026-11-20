@@ -1,0 +1,31 @@
+target_os = "linux"
+target_cpu = "x64"
+is_debug = false
+is_component_build = false
+is_clang = true
+use_sysroot = false
+use_custom_libcxx = false
+use_custom_libcxx_for_host = false
+use_cxx23 = false
+# Chromium's libc++-specific iterator lint treats libstdc++ std::array iterators
+# as unsafe raw pointers. Disable that lint plugin; retain runtime hardening.
+clang_use_unsafe_buffers_plugin = false
+use_rtti = true
+use_thin_lto = false
+use_remoteexec = false
+use_siso = false
+symbol_level = 1
+rtc_include_tests = false
+# M157's complete static archive does not yet bundle its optional Rust objects
+# (upstream BUILD.gn, crbug.com/430260876). Use the supported C++ implementation.
+rtc_rust = false
+rtc_build_examples = false
+rtc_build_tools = false
+rtc_enable_protobuf = false
+rtc_include_internal_audio_device = false
+rtc_use_x11 = false
+rtc_use_pipewire = false
+rtc_use_h264 = true
+rtc_use_h265 = false
+proprietary_codecs = true
+ffmpeg_branding = "Chrome"

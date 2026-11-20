@@ -34,6 +34,7 @@ __pycache__/
 .ruff_cache/
 .venv-lerobot/
 .venv-inference/
+.venv-teleop/
 outputs/
 
 ros_ws/build
@@ -41,3 +42,12 @@ ros_ws/devel
 *.h5
 
 ckpts
+
+# Google WebRTC: sources are pinned gitlinks; gclient owns its generated metadata/cache.
+third_party/webrtc/.gclient*
+third_party/webrtc/.cache/
+third_party/webrtc/.cipd/
+third_party/webrtc/.gcs_entries
+third_party/webrtc/.prepared
+third_party/webrtc/dependencies.resolved.txt
+third_party/webrtc/_bad_scm/

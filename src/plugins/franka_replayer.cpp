@@ -9,7 +9,7 @@ namespace robo_lab {
 
 namespace {
 
-// Load a 2D float64 dataset of width 7 into row-major std::array<double,7>s.
+// Recordings have seven arm joints, optionally followed by the gripper column.
 // Returns false on any HDF5 error or shape mismatch.
 bool read_positions_dataset(hid_t file_id,
                             const char* path,
@@ -32,13 +32,14 @@ bool read_positions_dataset(hid_t file_id,
   H5Sget_simple_extent_dims(space, dims, nullptr);
   H5Sclose(space);
 
-  if (dims[1] != 7) {
-    std::cerr << "franka_replayer: " << path << " has " << dims[1] << " cols (expected 7)\n";
+  if (dims[1] != 7 && dims[1] != 8) {
+    std::cerr << "franka_replayer: " << path << " has " << dims[1] << " cols (expected 7 or 8)\n";
     H5Dclose(ds);
     return false;
   }
 
-  std::vector<double> flat(static_cast<size_t>(dims[0]) * 7);
+  const auto columns = static_cast<size_t>(dims[1]);
+  std::vector<double> flat(static_cast<size_t>(dims[0]) * columns);
   if (H5Dread(ds, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, flat.data()) < 0) {
     std::cerr << "franka_replayer: H5Dread failed on " << path << '\n';
     H5Dclose(ds);
@@ -50,7 +51,7 @@ bool read_positions_dataset(hid_t file_id,
   for (size_t i = 0; i < dims[0]; ++i) {
     std::array<double, 7> q;
     for (int j = 0; j < 7; ++j) {
-      q[j] = flat[i * 7 + j];
+      q[j] = flat[i * columns + j];
     }
     out->push_back(q);
   }

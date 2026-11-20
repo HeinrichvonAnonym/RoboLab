@@ -1,0 +1,10 @@
+# GELLO publishes joint targets directly to franka/command in a separate process.
+# Keep keyboard_plugin for F2 state transitions. Its Cartesian key messages have
+# no consumer here: do not load cartesian_control_plugin alongside GELLO.
+plugins:
+  - name: franka_plugin
+    config: config/plugins/franka_gello_plugin_config.yaml
+    lib: ./build/plugins/libfranka_plugin.so
+  - name: keyboard_plugin
+    config: config/plugins/keyboard_plugin_config.yaml
+    lib: ./build/plugins/libkeyboard_plugin.so

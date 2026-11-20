@@ -1,0 +1,46 @@
+syntax = "proto3";
+package camera;
+
+// Raw, unaligned images. Stride is in bytes; depth is little-endian Z16.
+message Image {
+  bytes data = 1;
+  uint32 width = 2;
+  uint32 height = 3;
+  uint32 stride = 4;
+  enum Encoding { UNKNOWN = 0; RGB8 = 1; Z16 = 2; }
+  Encoding encoding = 5;
+  uint64 frame_number = 6;
+  double device_timestamp_ms = 7;
+  // rs2_timestamp_domain: hardware=0, system=1, global=2.
+  uint32 timestamp_domain = 8;
+}
+
+message Intrinsics {
+  uint32 width = 1;
+  uint32 height = 2;
+  float fx = 3;
+  float fy = 4;
+  float ppx = 5;
+  float ppy = 6;
+  // rs2_distortion, with exactly five coefficients in SDK order.
+  uint32 distortion_model = 7;
+  repeated float coefficients = 8;
+}
+
+message Extrinsics {
+  // Column-major 3x3 rotation, then translation in metres. Target = R*source+t.
+  repeated float rotation = 1;
+  repeated float translation_m = 2;
+}
+
+message RgbdFrame {
+  uint32 schema_version = 1; // Currently 1.
+  string serial = 2;
+  Image color = 3;
+  Image depth = 4;
+  Intrinsics color_intrinsics = 5;
+  Intrinsics depth_intrinsics = 6;
+  Extrinsics depth_to_color = 7;
+  float depth_units_m = 8;
+  uint64 host_received_monotonic_ns = 9;
+}

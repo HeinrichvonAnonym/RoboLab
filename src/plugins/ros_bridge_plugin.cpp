@@ -7,32 +7,48 @@
 #include "franka.pb.h"
 #include "imu.pb.h"
 #include "kinect.pb.h"
-#include <ros/ros.h>
-#include <nav_msgs/Odometry.h>
-#include <sensor_msgs/Image.h>
-#include <sensor_msgs/Imu.h>
-#include <sensor_msgs/JointState.h>
-#include <geometry_msgs/Pose.h>
-#include <geometry_msgs/PoseArray.h>
-#include <geometry_msgs/PoseStamped.h>
-#include <std_msgs/ByteMultiArray.h>
+#include <rclcpp/rclcpp.hpp>
+#include <stdexcept>
+#include <nav_msgs/msg/odometry.hpp>
+#include <sensor_msgs/msg/image.hpp>
+#include <sensor_msgs/msg/imu.hpp>
+#include <sensor_msgs/msg/joint_state.hpp>
+#include <geometry_msgs/msg/pose.hpp>
+#include <geometry_msgs/msg/pose_array.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <std_msgs/msg/byte_multi_array.hpp>
 #include <yaml-cpp/yaml.h>
 
 namespace robo_lab {
 namespace {
 
+// Preserve ROS 1 NodeHandle("~") resolution for relative topic names.
+std::string private_topic(const std::string& name) {
+  return (!name.empty() && name.front() != '/' && name.front() != '~') ? "~/" + name : name;
+}
+
+struct RosPublisher {
+  rclcpp::PublisherBase::SharedPtr publisher;
+  rclcpp::Clock::SharedPtr clock;
+
+  template<class Message>
+  void publish(const Message& message) const {
+    std::static_pointer_cast<rclcpp::Publisher<Message>>(publisher)->publish(message);
+  }
+};
+
 bool publish_zenoh_to_ros(const std::string& ros_type,
                           const std::vector<std::string>& joint_names,
                           const std::string& frame,
                           const std::string& payload,
-                          const ros::Publisher& pub) {
+                          const RosPublisher& pub) {
   const std::string frame_id = frame.empty() ? std::string("panda_link0") : frame;
   if (ros_type == "sensor_msgs/JointState") {
-    sensor_msgs::JointState out;
-    out.header.stamp = ros::Time::now();
+    sensor_msgs::msg::JointState out;
+    out.header.stamp = pub.clock->now();
 
     franka::RobotObservation obs;
-    if (obs.ParseFromString(payload)) {
+    if (obs.ParseFromString(payload) && obs.joints_size() > 0) {
       const int n = obs.joints_size();
       out.name.resize(static_cast<size_t>(n));
       out.position.resize(static_cast<size_t>(n));
@@ -97,8 +113,8 @@ bool publish_zenoh_to_ros(const std::string& ros_type,
     if (!img.ParseFromString(payload)) {
       return false;
     }
-    sensor_msgs::Image out;
-    out.header.stamp = ros::Time::now();
+    sensor_msgs::msg::Image out;
+    out.header.stamp = pub.clock->now();
     out.width = static_cast<uint32_t>(img.width());
     out.height = static_cast<uint32_t>(img.height());
     out.step = static_cast<uint32_t>(img.step());
@@ -120,8 +136,8 @@ bool publish_zenoh_to_ros(const std::string& ros_type,
     if (!pose_msg.ParseFromString(payload)) {
       return false;
     }
-    geometry_msgs::PoseStamped out;
-    out.header.stamp = ros::Time::now();
+    geometry_msgs::msg::PoseStamped out;
+    out.header.stamp = pub.clock->now();
     out.header.frame_id = frame_id;
     out.pose.position.x = pose_msg.pose().pos().x();
     out.pose.position.y = pose_msg.pose().pos().y();
@@ -139,12 +155,12 @@ bool publish_zenoh_to_ros(const std::string& ros_type,
     if (!link_msg.ParseFromString(payload)) {
       return false;
     }
-    geometry_msgs::PoseArray out;
-    out.header.stamp = ros::Time::now();
+    geometry_msgs::msg::PoseArray out;
+    out.header.stamp = pub.clock->now();
     out.header.frame_id = frame_id;
     out.poses.reserve(static_cast<size_t>(link_msg.transforms_size()));
     for (const auto& sp : link_msg.transforms()) {
-      geometry_msgs::Pose p;
+      geometry_msgs::msg::Pose p;
       p.position.x = sp.pose().pos().x();
       p.position.y = sp.pose().pos().y();
       p.position.z = sp.pose().pos().z();
@@ -163,8 +179,8 @@ bool publish_zenoh_to_ros(const std::string& ros_type,
     if (!imu_msg.ParseFromString(payload)) {
       return false;
     }
-    sensor_msgs::Imu out;
-    out.header.stamp = ros::Time::now();
+    sensor_msgs::msg::Imu out;
+    out.header.stamp = pub.clock->now();
     out.header.frame_id = frame.empty() ? std::string("imu_link") : frame;
     if (imu_msg.has_ahrs()) {
       out.orientation.w = imu_msg.ahrs().quaternion().w();
@@ -189,8 +205,8 @@ bool publish_zenoh_to_ros(const std::string& ros_type,
     if (!imu_msg.ParseFromString(payload)) {
       return false;
     }
-    nav_msgs::Odometry out;
-    out.header.stamp = ros::Time::now();
+    nav_msgs::msg::Odometry out;
+    out.header.stamp = pub.clock->now();
     out.header.frame_id = frame.empty() ? std::string("odom") : frame;
     out.child_frame_id = "imu_link";
     if (imu_msg.has_ahrs()) {
@@ -208,7 +224,7 @@ bool publish_zenoh_to_ros(const std::string& ros_type,
     return true;
   }
 
-  std_msgs::ByteMultiArray raw;
+  std_msgs::msg::ByteMultiArray raw;
   raw.data.assign(payload.begin(), payload.end());
   pub.publish(raw);
   return true;
@@ -217,11 +233,30 @@ bool publish_zenoh_to_ros(const std::string& ros_type,
 }  // namespace
 
 struct RosBridgePlugin::Impl {
-  std::unique_ptr<ros::NodeHandle> nh;
-  std::unique_ptr<ros::AsyncSpinner> spinner;
-  std::vector<ros::Publisher> robo_to_ros_publishers;
-  std::vector<ros::Subscriber> ros_to_robo_subscribers;
+  rclcpp::Context::SharedPtr context;
+  rclcpp::Node::SharedPtr node;
+  std::unique_ptr<rclcpp::executors::SingleThreadedExecutor> executor;
+  std::vector<RosPublisher> robo_to_ros_publishers;
+  std::vector<rclcpp::SubscriptionBase::SharedPtr> ros_to_robo_subscribers;
 };
+
+RosBridgePlugin::RosBridgePlugin() = default;
+RosBridgePlugin::~RosBridgePlugin() { cleanup(); }
+
+void RosBridgePlugin::cleanup() {
+  // Called after run's executor has stopped, or before it was ever started.
+  // Drain Zenoh callbacks while ROS publishers and their context are still alive.
+  if (message_system_) message_system_->close();
+  message_system_.reset();
+  if (impl_) {
+    impl_->ros_to_robo_subscribers.clear();
+    impl_->robo_to_ros_publishers.clear();
+    impl_->executor.reset();
+    impl_->node.reset();
+    if (impl_->context && impl_->context->is_valid()) impl_->context->shutdown("bridge stopped");
+    impl_.reset();
+  }
+}
 
 bool RosBridgePlugin::parse_topic_list(const YAML::Node& node, std::vector<BridgeTopic>* out) {
   if (!node || !node.IsSequence()) {
@@ -240,6 +275,23 @@ bool RosBridgePlugin::parse_topic_list(const YAML::Node& node, std::vector<Bridg
     }
     if (item["ros_type"]) {
       t.ros_type = item["ros_type"].as<std::string>();
+    }
+    // Store a canonical old-style name so the existing conversion dispatch stays intact.
+    const auto msg_segment = t.ros_type.find("/msg/");
+    if (msg_segment != std::string::npos) t.ros_type.replace(msg_segment, 5, "/");
+    if (t.zenoh_msg.empty() || t.ros_msg.empty()) return false;
+    if (const auto qos = item["qos"]) {
+      if (!qos.IsMap()) return false;
+      if (qos["depth"]) {
+        const int depth = qos["depth"].as<int>();
+        if (depth <= 0) return false;
+        t.qos_depth = static_cast<size_t>(depth);
+      }
+      if (qos["reliability"]) {
+        const auto reliability = qos["reliability"].as<std::string>();
+        if (reliability != "reliable" && reliability != "best_effort") return false;
+        t.best_effort = reliability == "best_effort";
+      }
     }
     if (item["frame"]) {
       t.frame = item["frame"].as<std::string>();
@@ -284,171 +336,184 @@ bool RosBridgePlugin::load_config(const std::string& config_path) {
 }
 
 bool RosBridgePlugin::initialize(const std::string& config_path) {
-  config_path_ = config_path;
-  if (!load_config(config_path_)) {
+  cleanup();
+  stop_ = false;
+  robo_to_ros_topics_.clear();
+  ros_to_robo_topics_.clear();
+  try {
+    config_path_ = config_path;
+    if (!load_config(config_path_)) {
+      return false;
+    }
+
+    message_system_ = std::make_unique<MessageSystem>();
+    message_system_->initialize();
+    if (!message_system_->is_open()) {
+      std::cerr << "ros_bridge_plugin: failed to open Zenoh session\n";
+      return false;
+    }
+
+    impl_ = std::make_unique<Impl>();
+    impl_->context = std::make_shared<rclcpp::Context>();
+    impl_->context->init(0, nullptr); // Does not install global signal handlers.
+    rclcpp::NodeOptions node_options;
+    node_options.context(impl_->context);
+    impl_->node = std::make_shared<rclcpp::Node>("robo_lab_ros_bridge_plugin", node_options);
+    rclcpp::ExecutorOptions executor_options;
+    executor_options.context = impl_->context;
+    impl_->executor = std::make_unique<rclcpp::executors::SingleThreadedExecutor>(executor_options);
+    impl_->executor->add_node(impl_->node);
+
+    impl_->robo_to_ros_publishers.reserve(robo_to_ros_topics_.size());
+    for (const auto& bridge : robo_to_ros_topics_) {
+      RosPublisher pub;
+      pub.clock = impl_->node->get_clock();
+      auto qos = rclcpp::QoS(rclcpp::KeepLast(bridge.qos_depth)).durability_volatile();
+      if (bridge.best_effort) qos.best_effort();
+      const auto topic = private_topic(bridge.ros_msg);
+      if (bridge.ros_type == "sensor_msgs/JointState") {
+        pub.publisher = impl_->node->create_publisher<sensor_msgs::msg::JointState>(topic, qos);
+      } else if (bridge.ros_type == "sensor_msgs/Image") {
+        pub.publisher = impl_->node->create_publisher<sensor_msgs::msg::Image>(topic, qos);
+      } else if (bridge.ros_type == "geometry_msgs/PoseStamped") {
+        pub.publisher = impl_->node->create_publisher<geometry_msgs::msg::PoseStamped>(topic, qos);
+      } else if (bridge.ros_type == "geometry_msgs/PoseArray") {
+        pub.publisher = impl_->node->create_publisher<geometry_msgs::msg::PoseArray>(topic, qos);
+      } else if (bridge.ros_type == "sensor_msgs/Imu") {
+        pub.publisher = impl_->node->create_publisher<sensor_msgs::msg::Imu>(topic, qos);
+      } else if (bridge.ros_type == "nav_msgs/Odometry") {
+        pub.publisher = impl_->node->create_publisher<nav_msgs::msg::Odometry>(topic, qos);
+      } else {
+        pub.publisher = impl_->node->create_publisher<std_msgs::msg::ByteMultiArray>(topic, qos);
+        std::cout << "ros_bridge_plugin: unsupported ros_type '" << bridge.ros_type
+                  << "' on " << bridge.ros_msg << ", using std_msgs/ByteMultiArray fallback\n";
+      }
+      impl_->robo_to_ros_publishers.push_back(pub);
+
+      if (!message_system_->subscribe(
+          bridge.zenoh_msg, [pub, bridge](const std::string& key, const std::string& payload) {
+            try {
+              if (!publish_zenoh_to_ros(bridge.ros_type, bridge.joint_names, bridge.frame, payload, pub)) {
+                std::cerr << "ros_bridge_plugin: failed to decode payload for " << key << '\n';
+              }
+            } catch (const std::exception& e) {
+              std::cerr << "ros_bridge_plugin: publish failed for " << key << ": " << e.what() << '\n';
+            }
+          })) {
+        throw std::runtime_error("failed to subscribe to Zenoh key: " + bridge.zenoh_msg);
+      }
+    }
+
+    impl_->ros_to_robo_subscribers.reserve(ros_to_robo_topics_.size());
+    for (const auto& bridge : ros_to_robo_topics_) {
+      rclcpp::SubscriptionBase::SharedPtr sub;
+      auto qos = rclcpp::QoS(rclcpp::KeepLast(bridge.qos_depth)).durability_volatile();
+      if (bridge.best_effort) qos.best_effort();
+      const auto topic = private_topic(bridge.ros_msg);
+      if (bridge.ros_type == "sensor_msgs/JointState") {
+        // std::cout << "ros_bridge_plugin: subscribing to " << bridge.ros_msg << std::endl;
+        sub = impl_->node->create_subscription<sensor_msgs::msg::JointState>(
+            topic, qos,
+            [this, bridge](const sensor_msgs::msg::JointState::ConstSharedPtr msg) {
+              franka::JointStateArray out;
+              const size_t n = msg->position.size();
+              for (size_t i = 0; i < n; ++i) {
+                auto* s = out.add_states();
+                s->set_position(msg->position[i]);
+                if (i < msg->velocity.size()) {
+                  s->set_velocity(msg->velocity[i]);
+                }
+                if (i < msg->effort.size()) {
+                  s->set_effort(msg->effort[i]);
+                }
+              }
+              std::string payload;
+              if (!out.SerializeToString(&payload)) {
+                return;
+              }
+              message_system_->publish(bridge.zenoh_msg, payload);
+            });
+      } else if (bridge.ros_type == "sensor_msgs/Image") {
+        sub = impl_->node->create_subscription<sensor_msgs::msg::Image>(
+            topic, qos,
+            [this, bridge](const sensor_msgs::msg::Image::ConstSharedPtr msg) {
+              kinect::rgbImage out;
+              out.set_image(msg->data.data(), msg->data.size());
+              out.set_width(static_cast<int32_t>(msg->width));
+              out.set_height(static_cast<int32_t>(msg->height));
+              out.set_step(static_cast<int32_t>(msg->step));
+              if (msg->encoding == "rgb8") {
+                out.set_channels(3);
+              } else if (msg->encoding == "mono8") {
+                out.set_channels(1);
+              } else {
+                out.set_channels(0);
+              }
+              out.set_type(0);
+              std::string payload;
+              if (!out.SerializeToString(&payload)) {
+                return;
+              }
+              message_system_->publish(bridge.zenoh_msg, payload);
+            });
+      } else if (bridge.ros_type == "geometry_msgs/PoseStamped") {
+        sub = impl_->node->create_subscription<geometry_msgs::msg::PoseStamped>(
+            topic, qos,
+            [this, bridge](const geometry_msgs::msg::PoseStamped::ConstSharedPtr msg) {
+              franka::StampedPose out;
+              out.mutable_pose()->mutable_pos()->set_x(msg->pose.position.x);
+              out.mutable_pose()->mutable_pos()->set_y(msg->pose.position.y);
+              out.mutable_pose()->mutable_pos()->set_z(msg->pose.position.z);
+              out.mutable_pose()->mutable_rot()->set_w(msg->pose.orientation.w);
+              out.mutable_pose()->mutable_rot()->set_x(msg->pose.orientation.x);
+              out.mutable_pose()->mutable_rot()->set_y(msg->pose.orientation.y);
+              out.mutable_pose()->mutable_rot()->set_z(msg->pose.orientation.z);
+              out.set_sys_time(rclcpp::Time(msg->header.stamp).seconds());
+              std::string payload;
+              if (!out.SerializeToString(&payload)) {
+                return;
+              }
+              message_system_->publish(bridge.zenoh_msg, payload);
+            });
+      } else {
+        sub = impl_->node->create_subscription<std_msgs::msg::ByteMultiArray>(
+            topic, qos,
+            [this, bridge](const std_msgs::msg::ByteMultiArray::ConstSharedPtr msg) {
+              std::string payload(msg->data.begin(), msg->data.end());
+              message_system_->publish(bridge.zenoh_msg, payload);
+            });
+        std::cout << "ros_bridge_plugin: unsupported ros_type '" << bridge.ros_type
+                  << "' on " << bridge.ros_msg << ", using std_msgs/ByteMultiArray fallback\n";
+      }
+      impl_->ros_to_robo_subscribers.push_back(sub);
+    }
+
+    std::cout << "ros_bridge_plugin: initialized (robo->ros=" << robo_to_ros_topics_.size()
+              << ", ros->robo=" << ros_to_robo_topics_.size() << ")\n";
+    return true;
+  } catch (const std::exception& e) {
+    std::cerr << "ros_bridge_plugin: initialization failed: " << e.what() << '\n';
+    cleanup();
     return false;
   }
-
-  message_system_ = std::make_unique<MessageSystem>();
-  message_system_->initialize();
-  if (!message_system_->is_open()) {
-    std::cerr << "ros_bridge_plugin: failed to open Zenoh session\n";
-    return false;
-  }
-
-  int argc = 0;
-  char** argv = nullptr;
-  if (!ros::isInitialized()) {
-    ros::init(argc, argv, "robo_lab_ros_bridge_plugin", ros::init_options::NoSigintHandler);
-  }
-
-  impl_ = std::make_unique<Impl>();
-  impl_->nh = std::make_unique<ros::NodeHandle>("~");
-  impl_->spinner = std::make_unique<ros::AsyncSpinner>(1);
-
-  impl_->robo_to_ros_publishers.reserve(robo_to_ros_topics_.size());
-  for (const auto& bridge : robo_to_ros_topics_) {
-    ros::Publisher pub;
-    if (bridge.ros_type == "sensor_msgs/JointState") {
-      pub = impl_->nh->advertise<sensor_msgs::JointState>(bridge.ros_msg, 10);
-    } else if (bridge.ros_type == "sensor_msgs/Image") {
-      pub = impl_->nh->advertise<sensor_msgs::Image>(bridge.ros_msg, 10);
-    } else if (bridge.ros_type == "geometry_msgs/PoseStamped") {
-      pub = impl_->nh->advertise<geometry_msgs::PoseStamped>(bridge.ros_msg, 10);
-    } else if (bridge.ros_type == "geometry_msgs/PoseArray") {
-      pub = impl_->nh->advertise<geometry_msgs::PoseArray>(bridge.ros_msg, 10);
-    } else if (bridge.ros_type == "sensor_msgs/Imu") {
-      pub = impl_->nh->advertise<sensor_msgs::Imu>(bridge.ros_msg, 10);
-    } else if (bridge.ros_type == "nav_msgs/Odometry") {
-      pub = impl_->nh->advertise<nav_msgs::Odometry>(bridge.ros_msg, 10);
-    } else {
-      pub = impl_->nh->advertise<std_msgs::ByteMultiArray>(bridge.ros_msg, 10);
-      std::cout << "ros_bridge_plugin: unsupported ros_type '" << bridge.ros_type
-                << "' on " << bridge.ros_msg << ", using std_msgs/ByteMultiArray fallback\n";
-    }
-    impl_->robo_to_ros_publishers.push_back(pub);
-
-    const size_t idx = impl_->robo_to_ros_publishers.size() - 1;
-    const BridgeTopic bridge_cfg = bridge;
-    message_system_->subscribe(
-        bridge.zenoh_msg, [this, idx, bridge_cfg](const std::string& key, const std::string& payload) {
-          if (!publish_zenoh_to_ros(
-                  bridge_cfg.ros_type, bridge_cfg.joint_names, bridge_cfg.frame, payload,
-                  impl_->robo_to_ros_publishers[idx])) {
-            std::cerr << "ros_bridge_plugin: failed to decode Zenoh payload for key=" << key
-                      << " as ros_type=" << bridge_cfg.ros_type << '\n';
-          }
-        });
-  }
-
-  impl_->ros_to_robo_subscribers.reserve(ros_to_robo_topics_.size());
-  for (const auto& bridge : ros_to_robo_topics_) {
-    ros::Subscriber sub;
-    if (bridge.ros_type == "sensor_msgs/JointState") {
-      // std::cout << "ros_bridge_plugin: subscribing to " << bridge.ros_msg << std::endl;
-      sub = impl_->nh->subscribe<sensor_msgs::JointState>(
-          bridge.ros_msg, 10,
-          [this, bridge](const sensor_msgs::JointState::ConstPtr& msg) {
-            franka::JointStateArray out;
-            const size_t n = msg->position.size();
-            for (size_t i = 0; i < n; ++i) {
-              auto* s = out.add_states();
-              s->set_position(msg->position[i]);
-              if (i < msg->velocity.size()) {
-                s->set_velocity(msg->velocity[i]);
-              }
-              if (i < msg->effort.size()) {
-                s->set_effort(msg->effort[i]);
-              }
-            }
-            std::string payload;
-            if (!out.SerializeToString(&payload)) {
-              return;
-            }
-            message_system_->publish(bridge.zenoh_msg, payload);
-          });
-    } else if (bridge.ros_type == "sensor_msgs/Image") {
-      sub = impl_->nh->subscribe<sensor_msgs::Image>(
-          bridge.ros_msg, 10,
-          [this, bridge](const sensor_msgs::Image::ConstPtr& msg) {
-            kinect::rgbImage out;
-            out.set_image(msg->data.data(), msg->data.size());
-            out.set_width(static_cast<int32_t>(msg->width));
-            out.set_height(static_cast<int32_t>(msg->height));
-            out.set_step(static_cast<int32_t>(msg->step));
-            if (msg->encoding == "rgb8") {
-              out.set_channels(3);
-            } else if (msg->encoding == "mono8") {
-              out.set_channels(1);
-            } else {
-              out.set_channels(0);
-            }
-            out.set_type(0);
-            std::string payload;
-            if (!out.SerializeToString(&payload)) {
-              return;
-            }
-            message_system_->publish(bridge.zenoh_msg, payload);
-          });
-    } else if (bridge.ros_type == "geometry_msgs/PoseStamped") {
-      sub = impl_->nh->subscribe<geometry_msgs::PoseStamped>(
-          bridge.ros_msg, 10,
-          [this, bridge](const geometry_msgs::PoseStamped::ConstPtr& msg) {
-            franka::StampedPose out;
-            out.mutable_pose()->mutable_pos()->set_x(msg->pose.position.x);
-            out.mutable_pose()->mutable_pos()->set_y(msg->pose.position.y);
-            out.mutable_pose()->mutable_pos()->set_z(msg->pose.position.z);
-            out.mutable_pose()->mutable_rot()->set_w(msg->pose.orientation.w);
-            out.mutable_pose()->mutable_rot()->set_x(msg->pose.orientation.x);
-            out.mutable_pose()->mutable_rot()->set_y(msg->pose.orientation.y);
-            out.mutable_pose()->mutable_rot()->set_z(msg->pose.orientation.z);
-            out.set_sys_time(msg->header.stamp.toSec());
-            std::string payload;
-            if (!out.SerializeToString(&payload)) {
-              return;
-            }
-            message_system_->publish(bridge.zenoh_msg, payload);
-          });
-    } else {
-      sub = impl_->nh->subscribe<std_msgs::ByteMultiArray>(
-          bridge.ros_msg, 10,
-          [this, bridge](const std_msgs::ByteMultiArray::ConstPtr& msg) {
-            std::string payload(msg->data.begin(), msg->data.end());
-            message_system_->publish(bridge.zenoh_msg, payload);
-          });
-      std::cout << "ros_bridge_plugin: unsupported ros_type '" << bridge.ros_type
-                << "' on " << bridge.ros_msg << ", using std_msgs/ByteMultiArray fallback\n";
-    }
-    impl_->ros_to_robo_subscribers.push_back(sub);
-  }
-
-  impl_->spinner->start();
-  std::cout << "ros_bridge_plugin: initialized (robo->ros=" << robo_to_ros_topics_.size()
-            << ", ros->robo=" << ros_to_robo_topics_.size() << ")\n";
-  return true;
 }
 
 void RosBridgePlugin::run() {
-  stop_ = false;
-  std::cout << "ros_bridge_plugin: run loop started\n";
-  while (!stop_) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  if (!impl_) return;
+  try {
+    while (!stop_ && impl_->context->is_valid()) {
+      impl_->executor->spin_some(std::chrono::milliseconds(10));
+      std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+  } catch (const std::exception& e) {
+    std::cerr << "ros_bridge_plugin: executor stopped: " << e.what() << '\n';
   }
-  std::cout << "ros_bridge_plugin: run loop exited\n";
-  // Spinner and Zenoh teardown run here so no thread publishes after close().
-  if (impl_ && impl_->spinner) {
-    impl_->spinner->stop();
-  }
-  if (message_system_) {
-    message_system_->close();
-  }
+  cleanup();
 }
 
 void RosBridgePlugin::stop() {
-  if (stop_.exchange(true)) {
-    return;
-  }
-  std::cout << "ros_bridge_plugin: stopping\n";
+  // No reset in run(): stop-before-run must also be respected.
+  stop_ = true;
 }
 
 }  // namespace robo_lab

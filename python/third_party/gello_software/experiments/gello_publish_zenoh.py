@@ -17,6 +17,7 @@ import json
 import subprocess
 import sys
 import time
+from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple
@@ -165,7 +166,7 @@ def main(args: Args) -> int:
         f"(dry_run={args.dry_run}, joint_pos_norm=True, joint_limits=Panda, units=rad)"
     )
 
-    with zenoh.open(conf) as session:
+    with closing(agent), zenoh.open(conf) as session:
         publisher = None if args.dry_run else session.declare_publisher(args.cmd_topic)
         next_time = time.monotonic()
         while True:
@@ -225,4 +226,10 @@ def main(args: Args) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(tyro.cli(Args)))
+    try:
+        raise SystemExit(main(tyro.cli(Args)))
+    except KeyboardInterrupt:
+        raise SystemExit(0)
+    except RuntimeError as exc:
+        print(f"GELLO: {exc}", file=sys.stderr)
+        raise SystemExit(1)

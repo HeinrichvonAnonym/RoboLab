@@ -1,0 +1,30 @@
+# This Panda uses a Robotiq 2F-85 over USB-RS485, not a Franka Hand.
+robot_ip: 172.16.0.40
+control_mode: "position"
+cmd_topic: "franka/command"
+state_topic: "franka/state"
+trigger_topic: "trigger"
+state_machine_topic: "franka/state_machine"
+
+arm_home: [-0.32, -0.9, 0.13, -2.75, 0.18, 1.95, 0.49]
+enable_gripper: true
+gripper_type: robotiq_2f85
+gripper_max_width: 0.085
+gripper_closed_width: 0.0
+gripper_speed: 0.03
+gripper_close_threshold: 0.5
+# Do not repeatedly squeeze when contact prevents reaching the closed width.
+gripper_retry_count: 0
+robotiq:
+  port: /dev/serial/by-id/usb-FTDI_USB_TO_RS-485_DAAL8Y3V-if00-port0
+  baudrate: 115200
+  slave_id: 9
+  force: 32  # Raw register [0,255], not newtons; verify on site.
+  open_position: 13
+  closed_position: 230
+  timeout_ms: 200
+  motion_timeout_ms: 5000
+
+dynamic:
+  kp: [120.0, 120, 120, 120, 120, 150.0, 60.0]
+  kd: [20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0]

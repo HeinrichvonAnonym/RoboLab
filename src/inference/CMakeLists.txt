@@ -22,6 +22,11 @@ find_library(
 if(NOT ROBOLAB_NVINFER)
   find_library(ROBOLAB_NVINFER NAMES nvinfer)
 endif()
+find_path(ROBOLAB_TENSORRT_INCLUDE NvInfer.h
+  HINTS "${ROBOLAB_TENSORRT_ROOT}/include")
+if(NOT ROBOLAB_TENSORRT_INCLUDE)
+  message(FATAL_ERROR "TensorRT headers not found; set ROBOLAB_TENSORRT_ROOT, or disable ROBOLAB_BUILD_TENSORRT")
+endif()
 
 if(NOT ROBOLAB_CUDART)
   message(FATAL_ERROR "libcudart not found (set ROBOLAB_CUDA_ROOT, default ${ROBOLAB_CUDA_ROOT})")
@@ -44,7 +49,7 @@ set_target_properties(robo_lab_inference PROPERTIES POSITION_INDEPENDENT_CODE ON
 target_include_directories(
   robo_lab_inference
   PUBLIC "${CMAKE_SOURCE_DIR}/include"
-         "${ROBOLAB_TENSORRT_ROOT}/include"
+         "${ROBOLAB_TENSORRT_INCLUDE}"
          "${ROBOLAB_CUDA_ROOT}/include")
 
 target_link_libraries(

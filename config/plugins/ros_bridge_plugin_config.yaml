@@ -1,3 +1,8 @@
+# ROS 2 Humble. Both pkg/Type and pkg/msg/Type spellings are accepted.
+# Relative ros_msg names retain the old private-node namespace:
+# franka_4/joint_state -> /robo_lab_ros_bridge_plugin/franka_4/joint_state.
+# Optional per-topic QoS: qos: {depth: 10, reliability: reliable}
+# For ROS -> Zenoh subscriptions to best-effort sensors, use reliability: best_effort.
 roboLab_2_ros_topics:
   - zenoh_msg: "franka/state"
     zenoh_type: "JointState"

@@ -363,7 +363,9 @@ def build_dual_franka_urdf(urdf_path: Path, root_xyz: Iterable[float], root_rpy:
 
     robot = ET.Element("robot", {"name": "dual_franka_overlay"})
     mujoco_ext = ET.SubElement(robot, "mujoco")
-    ET.SubElement(mujoco_ext, "compiler", {"discardvisual": "false"})
+    # URDF import strips mesh directories by default. Generated mesh parts live
+    # in the temporary cache and are referenced by absolute path.
+    ET.SubElement(mujoco_ext, "compiler", {"discardvisual": "false", "strippath": "false"})
     ET.SubElement(robot, "link", {"name": "world"})
 
     xyz = " ".join(str(float(v)) for v in root_xyz)
@@ -465,9 +467,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
         "--config",
-        default=str(repo_root / "config" / "plugins" / "franka_plugin_config.yaml"),
-        help="Franka plugin config path.",
+        default=None,
+        help="Franka plugin config path (overrides --bringup).",
     )
+    parser.add_argument("--bringup", help="Use the Franka config selected in this bringup YAML.")
     parser.add_argument(
         "--urdf",
         default=str(
@@ -498,7 +501,22 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    cfg = load_topic_config(Path(args.config))
+    config_path = Path(args.config) if args.config else repo_root / "config/plugins/franka_plugin_config.yaml"
+    if args.bringup and not args.config:
+        import yaml
+
+        bringup = Path(args.bringup).resolve()
+        entries = yaml.safe_load(bringup.read_text(encoding="utf-8")).get("plugins", [])
+        entry = next((p for p in entries if p.get("name") == "franka_plugin"), None)
+        if entry is None:
+            print("No franka_plugin in bringup; viewer is not needed.")
+            return 0
+        configured = Path(entry["config"])
+        candidates = [configured, bringup.parent / configured, repo_root / configured]
+        config_path = next((p for p in candidates if p.is_file()), None)
+        if config_path is None:
+            raise FileNotFoundError(entry["config"])
+    cfg = load_topic_config(config_path)
     latest = LatestState(
         state=LatestRobotData(q=list(cfg.arm_home), gripper_width=cfg.gripper_max_width),
         command=LatestRobotData(q=list(cfg.arm_home), gripper_width=cfg.gripper_max_width),
@@ -600,4 +618,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except KeyboardInterrupt:
+        raise SystemExit(0)

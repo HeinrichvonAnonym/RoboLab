@@ -1,0 +1,8 @@
+# Ubuntu 22.04 / Python 3.10. protobuf 3.20 accepts system protoc 3.12 output.
+numpy==1.26.4
+protobuf==3.20.3
+eclipse-zenoh==1.5.1
+mujoco==3.3.7
+tyro==0.9.35
+PyYAML==6.0.2
+pyserial==3.5

@@ -1,7 +1,12 @@
 # yaml-cpp is resolved in parent src/CMakeLists.txt
 
-# Franka plugin
-add_library(franka_plugin MODULE franka_plugin.cpp gripper_worker.cpp)
+if(ROBOLAB_BUILD_FRANKA OR ROBOLAB_BUILD_GRIPPER_TESTS)
+  add_library(robotiq_gripper STATIC robotiq_gripper.cpp)
+  target_include_directories(robotiq_gripper PUBLIC "${CMAKE_SOURCE_DIR}/include")
+  target_compile_features(robotiq_gripper PUBLIC cxx_std_17)
+  target_link_libraries(robotiq_gripper PUBLIC Threads::Threads)
+  set_target_properties(robotiq_gripper PROPERTIES POSITION_INDEPENDENT_CODE ON)
+endif()
 
 # Hardware-free tests exercise the same worker compiled into the plugin.
 if(ROBOLAB_BUILD_GRIPPER_TESTS)
@@ -11,65 +16,76 @@ if(ROBOLAB_BUILD_GRIPPER_TESTS)
   target_link_libraries(gripper_worker_test PRIVATE GTest::GTest Threads::Threads)
   target_compile_features(gripper_worker_test PRIVATE cxx_std_17)
   add_test(NAME gripper_worker COMMAND gripper_worker_test)
+  add_executable(robotiq_gripper_test ../../tests/robotiq_gripper_test.cpp gripper_worker.cpp)
+  target_link_libraries(robotiq_gripper_test PRIVATE robotiq_gripper GTest::GTest util)
+  add_test(NAME robotiq_gripper COMMAND robotiq_gripper_test)
+  set_tests_properties(robotiq_gripper PROPERTIES TIMEOUT 30)
 endif()
 
-# Eigen
 find_package(Eigen3 REQUIRED)
 
-target_include_directories(franka_plugin PRIVATE 
-"${CMAKE_SOURCE_DIR}/include"
-"${EIGEN3_INCLUDE_DIRS}")
+# Franka plugin
+if(ROBOLAB_BUILD_FRANKA)
+  add_library(franka_plugin MODULE franka_plugin.cpp gripper_worker.cpp)
 
-target_link_libraries(franka_plugin PRIVATE 
-        robo_lab 
-        robo_lab_proto 
-        yaml-cpp::yaml-cpp 
-        Franka::Franka
-        Eigen3::Eigen
-        )
 
-# Plugin is dlopen'd; it must resolve MessageSystem etc. from the same librobo_lab.so as the executable.
-set_target_properties(
-  franka_plugin
-  PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
-             OUTPUT_NAME "franka_plugin"
-             POSITION_INDEPENDENT_CODE ON
-             BUILD_RPATH "${CMAKE_BINARY_DIR}/src;$<TARGET_FILE_DIR:franka>")
+  target_include_directories(franka_plugin PRIVATE
+  "${CMAKE_SOURCE_DIR}/include"
+  "${EIGEN3_INCLUDE_DIRS}")
 
-target_compile_features(franka_plugin PRIVATE cxx_std_17)
+  target_link_libraries(franka_plugin PRIVATE
+          robo_lab
+          robo_lab_proto
+          yaml-cpp::yaml-cpp
+          Franka::Franka
+          robotiq_gripper
+          Eigen3::Eigen
+          )
 
-# 
+  # Plugin is dlopen'd; it must resolve MessageSystem etc. from the same librobo_lab.so as the executable.
+  set_target_properties(
+    franka_plugin
+    PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
+               OUTPUT_NAME "franka_plugin"
+               POSITION_INDEPENDENT_CODE ON
+               BUILD_RPATH "${CMAKE_BINARY_DIR}/src;$<TARGET_FILE_DIR:franka>")
+
+  target_compile_features(franka_plugin PRIVATE cxx_std_17)
+endif()
+
 # Kinect plugin
-add_library(
-  kinect_plugin
-  MODULE
-  kinect_plugin.cpp
-  ${CMAKE_SOURCE_DIR}/third_party/libfreenect2/examples/viewer.cpp
-  ${CMAKE_SOURCE_DIR}/third_party/libfreenect2/src/flextGL.cpp
-)
-# libfreenect2 uses directory-scoped include_directories(); that often does not populate
-# INTERFACE_INCLUDE_DIRECTORIES, so linking freenect2 alone may not add its headers for consumers.
-# what a piece of shit 
-# lucky dudes who are using realsense
-set(_robo_freenect2_src "${CMAKE_SOURCE_DIR}/third_party/libfreenect2")
-set(_robo_freenect2_bin "${CMAKE_BINARY_DIR}/third_party/libfreenect2")
-target_include_directories(
-  kinect_plugin
-  PRIVATE "${CMAKE_SOURCE_DIR}/include"
-          "${_robo_freenect2_src}/include"
-          "${_robo_freenect2_src}/src"
-          "${_robo_freenect2_bin}")
+if(ROBOLAB_BUILD_KINECT)
+  add_library(
+    kinect_plugin
+    MODULE
+    kinect_plugin.cpp
+    ${CMAKE_SOURCE_DIR}/third_party/libfreenect2/examples/viewer.cpp
+    ${CMAKE_SOURCE_DIR}/third_party/libfreenect2/src/flextGL.cpp
+  )
+  # libfreenect2 uses directory-scoped include_directories(); that often does not populate
+  # INTERFACE_INCLUDE_DIRECTORIES, so linking freenect2 alone may not add its headers for consumers.
+  # what a piece of shit
+  # lucky dudes who are using realsense
+  set(_robo_freenect2_src "${CMAKE_SOURCE_DIR}/third_party/libfreenect2")
+  set(_robo_freenect2_bin "${CMAKE_BINARY_DIR}/third_party/libfreenect2")
+  target_include_directories(
+    kinect_plugin
+    PRIVATE "${CMAKE_SOURCE_DIR}/include"
+            "${_robo_freenect2_src}/include"
+            "${_robo_freenect2_src}/src"
+            "${_robo_freenect2_bin}")
 
-target_link_libraries(kinect_plugin PRIVATE robo_lab robo_lab_proto yaml-cpp::yaml-cpp freenect2)
+  target_link_libraries(kinect_plugin PRIVATE robo_lab robo_lab_proto yaml-cpp::yaml-cpp freenect2)
 
-set_target_properties(
-  kinect_plugin
-  PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
-             OUTPUT_NAME "kinect_plugin"
-             POSITION_INDEPENDENT_CODE ON
-             BUILD_RPATH "${CMAKE_BINARY_DIR}/src;$<TARGET_FILE_DIR:freenect2>")
+  set_target_properties(
+    kinect_plugin
+    PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
+               OUTPUT_NAME "kinect_plugin"
+               POSITION_INDEPENDENT_CODE ON
+               BUILD_RPATH "${CMAKE_BINARY_DIR}/src;$<TARGET_FILE_DIR:freenect2>")
 
-target_compile_features(kinect_plugin PRIVATE cxx_std_17)
+  target_compile_features(kinect_plugin PRIVATE cxx_std_17)
+endif()
 
 if(ROBOLAB_BUILD_KINECT_TESTS)
   find_package(GTest REQUIRED)
@@ -85,7 +101,7 @@ if(TARGET realsense2)
   add_library(realsense_plugin MODULE realsense_plugin.cpp)
 
   target_include_directories(realsense_plugin PRIVATE "${CMAKE_SOURCE_DIR}/include")
-  target_link_libraries(realsense_plugin PRIVATE robo_lab robo_lab_proto yaml-cpp::yaml-cpp realsense2)
+  target_link_libraries(realsense_plugin PRIVATE robo_lab robo_rgbd)
 
   set_target_properties(
     realsense_plugin
@@ -98,26 +114,28 @@ if(TARGET realsense2)
 endif()
 
 # Demo: TensorRT inference bridge (Zenoh float32 payloads)
-add_library(demo_inference_plugin MODULE demo_inference_plugin.cpp)
+if(ROBOLAB_BUILD_TENSORRT)
+  add_library(demo_inference_plugin MODULE demo_inference_plugin.cpp)
 
-target_include_directories(demo_inference_plugin PRIVATE "${CMAKE_SOURCE_DIR}/include")
+  target_include_directories(demo_inference_plugin PRIVATE "${CMAKE_SOURCE_DIR}/include")
 
-target_link_libraries(
-  demo_inference_plugin
-  PRIVATE robo_lab
-          robo_lab_proto
-          yaml-cpp::yaml-cpp
-          robo_lab_inference)
+  target_link_libraries(
+    demo_inference_plugin
+    PRIVATE robo_lab
+            robo_lab_proto
+            yaml-cpp::yaml-cpp
+            robo_lab_inference)
 
-set(_robo_trt_lib "${CMAKE_SOURCE_DIR}/third_party/TensorRT-10.2.0.19/lib")
-set_target_properties(
-  demo_inference_plugin
-  PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
-             OUTPUT_NAME "demo_inference_plugin"
-             POSITION_INDEPENDENT_CODE ON
-             BUILD_RPATH "${CMAKE_BINARY_DIR}/src;${_robo_trt_lib}")
+  get_filename_component(_robo_trt_lib "${ROBOLAB_NVINFER}" DIRECTORY)
+  set_target_properties(
+    demo_inference_plugin
+    PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
+               OUTPUT_NAME "demo_inference_plugin"
+               POSITION_INDEPENDENT_CODE ON
+               BUILD_RPATH "${CMAKE_BINARY_DIR}/src;${_robo_trt_lib}")
 
-target_compile_features(demo_inference_plugin PRIVATE cxx_std_17)
+  target_compile_features(demo_inference_plugin PRIVATE cxx_std_17)
+endif()
 
 # Cartesian control plugin
 add_library(cartesian_control_plugin MODULE cartesian_control_plugin.cpp)
@@ -249,27 +267,21 @@ if(TARGET robo_serial)
   target_compile_features(n100_imu_plugin PRIVATE cxx_std_17)
 endif()
 
-# ROS <-> Zenoh raw-byte bridge plugin (optional).
-option(ROBOLAB_BUILD_ROS_BRIDGE "Build ros_bridge_plugin (requires ROS1/catkin)" ON)
+# ROS 2 <-> Zenoh bridge; the root project remains a plain CMake project.
 if(ROBOLAB_BUILD_ROS_BRIDGE)
-  set(PYTHON_EXECUTABLE /usr/bin/python3)
-  find_package(catkin REQUIRED COMPONENTS roscpp std_msgs sensor_msgs geometry_msgs nav_msgs)
+  find_package(ament_cmake REQUIRED)
+  find_package(rclcpp REQUIRED)
+  find_package(std_msgs REQUIRED)
+  find_package(sensor_msgs REQUIRED)
+  find_package(geometry_msgs REQUIRED)
+  find_package(nav_msgs REQUIRED)
   add_library(ros_bridge_plugin MODULE ros_bridge_plugin.cpp)
-  target_include_directories(
-    ros_bridge_plugin
-    PRIVATE "${CMAKE_SOURCE_DIR}/include"
-            ${catkin_INCLUDE_DIRS})
-  target_link_libraries(
-    ros_bridge_plugin
-    PRIVATE robo_lab
-            robo_lab_proto
-            yaml-cpp::yaml-cpp
-            ${catkin_LIBRARIES})
-  set_target_properties(
-    ros_bridge_plugin
-    PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
-               OUTPUT_NAME "ros_bridge_plugin"
-               POSITION_INDEPENDENT_CODE ON
-               BUILD_RPATH "${CMAKE_BINARY_DIR}/src")
+  target_include_directories(ros_bridge_plugin PRIVATE "${CMAKE_SOURCE_DIR}/include")
+  # ament_target_dependencies uses the plain target_link_libraries signature.
+  target_link_libraries(ros_bridge_plugin robo_lab robo_lab_proto yaml-cpp::yaml-cpp)
+  ament_target_dependencies(ros_bridge_plugin rclcpp std_msgs sensor_msgs geometry_msgs nav_msgs)
+  set_target_properties(ros_bridge_plugin PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
+    BUILD_RPATH "${CMAKE_BINARY_DIR}/src")
   target_compile_features(ros_bridge_plugin PRIVATE cxx_std_17)
 endif()

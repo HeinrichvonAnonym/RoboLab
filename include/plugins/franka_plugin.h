@@ -3,6 +3,7 @@
 #include "plugin_interface.h"
 #include "message_system.h"
 #include "plugins/gripper_worker.h"
+#include "plugins/robotiq_gripper.h"
 
 #include <array>
 #include <atomic>
@@ -66,6 +67,7 @@ class FrankaPlugin : public Plugin {
   std::unique_ptr<franka::Robot> robot_;
   std::unique_ptr<franka::Model> model_;
   std::unique_ptr<franka::Gripper> gripper_;
+  std::shared_ptr<RobotiqGripper> robotiq_gripper_;
 
   bool publish_state(const franka::RobotState& robot_state);
   bool publish_control_state(ControlState state);

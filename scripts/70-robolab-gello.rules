@@ -1,0 +1,4 @@
+# Grant the active local desktop user access only to the calibrated Panda GELLO.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6014", ATTRS{serial}=="FTBYPQ5E", TAG+="uaccess", ENV{ID_MM_DEVICE_IGNORE}="1"
+# Robotiq 2F-85 USB-RS485 adapter confirmed by the operator.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6015", ATTRS{serial}=="DAAL8Y3V", TAG+="uaccess", ENV{ID_MM_DEVICE_IGNORE}="1"

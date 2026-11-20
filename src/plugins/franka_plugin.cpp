@@ -113,6 +113,7 @@ bool FrankaPlugin::initialize(const std::string& config_path) {
   config_path_ = config_path;
 
   YAML::Node root;
+  std::string initialization_stage = "plugin configuration";
   try {
     
     root = YAML::LoadFile(config_path);
@@ -148,7 +149,9 @@ bool FrankaPlugin::initialize(const std::string& config_path) {
       return false;
     }
     robot_ip_ = root["robot_ip"].as<std::string>();
+    initialization_stage = "arm interface (TCP 1337) at " + robot_ip_;
     robot_ = std::make_unique<franka::Robot>(robot_ip_);
+    initialization_stage = "plugin configuration";
 
     if (root["cmd_topic"]) {
       cmd_topic_ = root["cmd_topic"].as<std::string>();
@@ -258,9 +261,42 @@ bool FrankaPlugin::initialize(const std::string& config_path) {
       if (root["gripper_confirmation_wait_ms"]) {
         gripper_options_.confirmation_wait = std::chrono::milliseconds(root["gripper_confirmation_wait_ms"].as<int>());
       }
-      gripper_ = std::make_unique<franka::Gripper>(robot_ip_);
+      std::shared_ptr<GripperDevice> gripper_device;
+      const std::string gripper_type = root["gripper_type"] ? root["gripper_type"].as<std::string>() : "franka";
+      if (gripper_type == "robotiq_2f85") {
+        initialization_stage = "Robotiq 2F-85 RS485 interface";
+        const auto cfg = root["robotiq"];
+        if (!cfg || !cfg["port"]) throw std::runtime_error("robotiq.port is required");
+        RobotiqGripper::Options options;
+        options.port = cfg["port"].as<std::string>();
+        initialization_stage = "Robotiq 2F-85 RS485 interface on " + options.port;
+        if (cfg["baudrate"]) options.baudrate = cfg["baudrate"].as<int>();
+        if (cfg["slave_id"]) options.slave_id = cfg["slave_id"].as<int>();
+        if (cfg["force"]) options.force = cfg["force"].as<int>();
+        if (cfg["timeout_ms"]) options.timeout_ms = cfg["timeout_ms"].as<int>();
+        if (cfg["motion_timeout_ms"]) options.motion_timeout_ms = cfg["motion_timeout_ms"].as<int>();
+        if (cfg["open_position"]) options.open_position = cfg["open_position"].as<int>();
+        if (cfg["closed_position"]) options.closed_position = cfg["closed_position"].as<int>();
+        options.max_width = gripper_max_width_;
+        robotiq_gripper_ = std::make_shared<RobotiqGripper>(options);
+        const auto state = robotiq_gripper_->read_state();
+        std::cout << "franka_plugin: Robotiq connected on " << options.port
+                  << " ready=" << state.ready() << " fault=" << state.fault
+                  << " width=" << state.width << " (read-only initialization)\n";
+        if (!state.ready())
+          throw std::runtime_error("Robotiq needs on-site activation: use robotiq_connection_check <port> --activate");
+        if (state.fault != 0 && state.fault != 9)
+          throw std::runtime_error("Robotiq reports fault " + std::to_string(state.fault));
+        gripper_device = robotiq_gripper_;
+      } else if (gripper_type == "franka") {
+        initialization_stage = "Franka Hand interface (TCP 1338) at " + robot_ip_;
+        gripper_ = std::make_unique<franka::Gripper>(robot_ip_);
+        gripper_device = std::make_shared<FrankaGripperDevice>(*gripper_);
+      } else {
+        throw std::runtime_error("Unsupported gripper_type: " + gripper_type);
+      }
       gripper_worker_ = std::make_unique<GripperWorker>(
-          std::make_shared<FrankaGripperDevice>(*gripper_), gripper_options_,
+          gripper_device, gripper_options_,
           [](const std::string& message) { std::cout << "[FrankaPlugin] gripper " << message << '\n'; });
     }
 
@@ -268,7 +304,8 @@ bool FrankaPlugin::initialize(const std::string& config_path) {
     std::cerr << "franka_plugin: YAML error in " << config_path << ": " << e.what() << '\n';
     return false;
   } catch (const std::exception& e) {
-    std::cerr << "franka_plugin: failed to initialize Franka interface: " << e.what() << '\n';
+    std::cerr << "franka_plugin: failed to initialize " << initialization_stage
+              << ": " << e.what() << '\n';
     return false;
   }
 
@@ -279,7 +316,8 @@ bool FrankaPlugin::initialize(const std::string& config_path) {
             << ", cmd_filter_alpha=" << cmd_filter_alpha_
             << ", enable_gripper=" << (enable_gripper_ ? "true" : "false");
   if (enable_gripper_) {
-    std::cout << ", gripper_max_width=" << gripper_max_width_
+    std::cout << ", gripper_type=" << (robotiq_gripper_ ? "robotiq_2f85" : "franka")
+              << ", gripper_max_width=" << gripper_max_width_
               << ", gripper_closed_width=" << gripper_closed_width_
               << ", gripper_speed=" << gripper_speed_
               << ", gripper_close_threshold=" << gripper_close_threshold_
@@ -445,8 +483,15 @@ void FrankaPlugin::cmd_subscriber_callback(const std::string& key, const std::st
 void FrankaPlugin::gripper_state_loop() {
   while (!gripper_reader_stop_) {
     try {
-      const franka::GripperState state = gripper_->readOnce();
-      gripper_worker_->update_state(state.width);
+      if (robotiq_gripper_) {
+        const auto state = robotiq_gripper_->read_state();
+        if (!state.ready() || (state.fault != 0 && state.fault != 9))
+          throw std::runtime_error("Robotiq not ready or fault=" + std::to_string(state.fault));
+        gripper_worker_->update_state(state.width);
+      } else {
+        const franka::GripperState state = gripper_->readOnce();
+        gripper_worker_->update_state(state.width);
+      }
       std::unique_lock<std::mutex> lock(gripper_reader_mutex_);
       gripper_reader_cv_.wait_for(lock, std::chrono::milliseconds(20), [&] {
         return gripper_reader_stop_.load();

@@ -146,3 +146,6 @@ class GelloAgent(Agent):
 
     def act(self, obs: Dict[str, np.ndarray]) -> np.ndarray:
         return self._robot.get_joint_state()
+
+    def close(self) -> None:
+        self._robot.close()

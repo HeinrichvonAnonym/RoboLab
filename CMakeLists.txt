@@ -1,14 +1,32 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(roboLab LANGUAGES CXX)
+project(roboLab LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+find_program(ROBOLAB_CCACHE ccache)
+if(ROBOLAB_CCACHE)
+  set(CMAKE_C_COMPILER_LAUNCHER "${ROBOLAB_CCACHE}")
+  set(CMAKE_CXX_COMPILER_LAUNCHER "${ROBOLAB_CCACHE}")
+endif()
+option(ROBOLAB_BUILD_FRANKA "Build Franka hardware plugin and bundled libfranka" ON)
+option(ROBOLAB_BUILD_KINECT "Build Kinect plugin and bundled libfreenect2" ON)
+option(ROBOLAB_BUILD_TENSORRT "Build TensorRT inference library and demo plugin" OFF)
+option(ROBOLAB_BUILD_ROS_BRIDGE "Build ROS 2 Humble bridge plugin" ON)
+option(ROBOLAB_BUILD_INTEGRATION_TESTS "Build hardware-free plugin integration checks" OFF)
+option(ROBOLAB_BUILD_RGBD_PREVIEW "Build the desktop RGB-D stereo preview" OFF)
+option(ROBOLAB_BUILD_RGBD_TESTS "Build hardware-free RGB-D tests" OFF)
+option(ROBOLAB_BUILD_WEBRTC "Enable the explicitly prepared Google WebRTC dependency" OFF)
+set(ROBOLAB_CUDA_ROOT "/usr/local/cuda-11.8" CACHE PATH "CUDA toolkit root")
+
 option(ROBOLAB_BUILD_GRIPPER_TESTS "Build hardware-free gripper worker checks" OFF)
 option(ROBOLAB_BUILD_KINECT_TESTS "Build hardware-free Kinect sampling checks" OFF)
-if(ROBOLAB_BUILD_GRIPPER_TESTS OR ROBOLAB_BUILD_KINECT_TESTS)
+if(ROBOLAB_BUILD_GRIPPER_TESTS OR ROBOLAB_BUILD_KINECT_TESTS OR ROBOLAB_BUILD_INTEGRATION_TESTS OR ROBOLAB_BUILD_RGBD_TESTS OR ROBOLAB_BUILD_WEBRTC)
   enable_testing()
 endif()
 
@@ -34,6 +52,15 @@ find_package(zenohc CONFIG QUIET)
 if(zenohc_FOUND)
   # Installed/config-mode zenoh-c (CMAKE_PREFIX_PATH, etc.).
 elseif(EXISTS "${_robo_zenohc_src}/CMakeLists.txt")
+  find_program(ROBOLAB_CARGO cargo HINTS "$ENV{HOME}/.cargo/bin")
+  if(NOT ROBOLAB_CARGO)
+    message(FATAL_ERROR "Cargo is missing. Run scripts/install_x86.sh, then source ~/.cargo/env; or provide an installed zenohc package.")
+  endif()
+  # The bundled toolchain/lock file is the source of truth; no floating Cargo updates.
+  set(ZENOHC_CARGO_FLAGS "--locked" CACHE STRING "Additional Cargo flags")
+  if(NOT "--locked" IN_LIST ZENOHC_CARGO_FLAGS)
+    list(APPEND ZENOHC_CARGO_FLAGS --locked)
+  endif()
   set(ZENOHC_BUILD_IN_SOURCE_TREE
       OFF
       CACHE BOOL "" FORCE)
@@ -184,24 +211,37 @@ set(BUILD_TESTS
 set(BUILD_EXAMPLES
     ${ROBOLAB_THIRDPARTY_EXECUTABLES}
     CACHE BOOL "libfranka/libfreenect2/librealsense: build examples" FORCE)
-add_subdirectory(third_party/libfranka-0.9.0)
+if(ROBOLAB_BUILD_FRANKA)
+  add_subdirectory(third_party/libfranka-0.9.0)
+endif()
 
 # libfreenect2 defaults ENABLE_CUDA=ON; nvcc then needs a working host C++ compiler (g++/cc1plus).
-# Turn CUDA off here unless you explicitly opt in (avoids "cannot execute cc1plus" when g++ isn't set up for nvcc).
+# CUDA stays enabled by default; explicitly opt out for a CPU-only Kinect build.
 option(ROBOLAB_LIBFREENECT2_CUDA "Build bundled libfreenect2 with CUDA depth processor" ON)
 set(ENABLE_CUDA
     ${ROBOLAB_LIBFREENECT2_CUDA}
     CACHE BOOL "libfreenect2: CUDA support" FORCE)
 
-add_subdirectory(third_party/libfreenect2)
+if(ROBOLAB_BUILD_KINECT)
+  if(ROBOLAB_LIBFREENECT2_CUDA)
+    set(CUDA_TOOLKIT_ROOT_DIR "${ROBOLAB_CUDA_ROOT}" CACHE PATH "CUDA toolkit used by libfreenect2" FORCE)
+    find_package(CUDA REQUIRED)
+    if(NOT EXISTS "${CMAKE_SOURCE_DIR}/third_party/cuda-samples/Common/helper_math.h")
+      message(FATAL_ERROR "CUDA helper_math.h is missing. Run: git submodule update --init --depth 1 third_party/cuda-samples")
+    endif()
+  endif()
+  set(BUILD_OPENNI2_DRIVER OFF CACHE BOOL "Unused Kinect OpenNI2 driver" FORCE)
+  set(BUILD_STREAMER_RECORDER OFF CACHE BOOL "Unused Kinect example" FORCE)
+  add_subdirectory(third_party/libfreenect2)
+endif()
 
 
 
-# librealsense is optional and currently not required for Kinect v2 plugin path.
-# Keep it disabled by default to avoid nested-project path assumptions
-# (e.g. examples/tools including ${CMAKE_SOURCE_DIR}/CMake/*).
+# RealSense is part of the default hardware bringup, but can be disabled independently.
 option(ROBOLAB_BUILD_LIBREALSENSE "Build bundled librealsense" ON)
 if(ROBOLAB_BUILD_LIBREALSENSE)
+  # Use our compiler launcher instead of upstream's global compile/link launcher.
+  set(ENABLE_CCACHE OFF CACHE BOOL "Use RoboLab's ccache launcher" FORCE)
   set(BUILD_TOOLS
       ${ROBOLAB_THIRDPARTY_EXECUTABLES}
       CACHE BOOL "librealsense: build tools" FORCE)
@@ -237,7 +277,19 @@ if(EXISTS "${_robo_serial_src}/src/serial.cc")
   target_link_libraries(robo_serial PUBLIC rt pthread)
   set_target_properties(robo_serial PROPERTIES POSITION_INDEPENDENT_CODE ON)
   target_compile_features(robo_serial PRIVATE cxx_std_17)
+else()
+  message(FATAL_ERROR "N100 IMU serial dependency is missing. Run: git submodule update --init --depth 1 third_party/serial")
 endif()
 
 add_subdirectory(src)
 add_subdirectory(apps)
+
+if(ROBOLAB_BUILD_INTEGRATION_TESTS)
+  add_subdirectory(tests)
+endif()
+if(ROBOLAB_BUILD_RGBD_TESTS)
+  include(tests/rgbd_tests.cmake)
+endif()
+if(ROBOLAB_BUILD_WEBRTC)
+  include(cmake/GoogleWebRTC.cmake)
+endif()

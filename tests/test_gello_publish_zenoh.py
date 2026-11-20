@@ -195,6 +195,9 @@ class PublisherIntegrationTests(unittest.TestCase):
                 return result
 
         class SimulatedAgent:
+            def close(self):
+                pass
+
             def __init__(self, **kwargs):
                 self.index = 0
                 self.started = None

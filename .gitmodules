@@ -1,9 +1,21 @@
 [submodule "python/benchmark/asset/robot/URDF2FBX"]
 	path = python/benchmark/asset/robot/URDF2FBX
 	url = https://github.com/PiggyGaGa/URDF2FBX.git
+[submodule "third_party/cuda-samples"]
+	path = third_party/cuda-samples
+	url = https://github.com/NVIDIA/cuda-samples.git
+[submodule "third_party/serial"]
+	path = third_party/serial
+	url = https://github.com/wjwwood/serial.git
 [submodule "python/third_party/gello_software/third_party/DynamixelSDK"]
 	path = python/third_party/gello_software/third_party/DynamixelSDK
 	url = https://github.com/ROBOTIS-GIT/DynamixelSDK.git
 [submodule "python/third_party/gello_software/third_party/mujoco_menagerie"]
 	path = python/third_party/gello_software/third_party/mujoco_menagerie
 	url = https://github.com/google-deepmind/mujoco_menagerie.git
+[submodule "third_party/depot_tools"]
+	path = third_party/depot_tools
+	url = https://chromium.googlesource.com/chromium/tools/depot_tools.git
+[submodule "third_party/webrtc/src"]
+	path = third_party/webrtc/src
+	url = https://webrtc.googlesource.com/src.git

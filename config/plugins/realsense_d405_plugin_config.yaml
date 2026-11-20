@@ -1,0 +1,15 @@
+serial: "262622272972"
+width: 640
+height: 480
+fps: 30
+enable_rgb: true
+enable_depth: true
+enable_ir: false
+publish_rgbd: true
+max_pair_skew_ms: 5.0
+use_opengl: false
+topic:
+  rgb: realsense/rgb
+  depth: realsense/depth
+  ir: realsense/ir
+  rgbd: realsense/rgbd

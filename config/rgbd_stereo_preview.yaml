@@ -1,0 +1,6 @@
+topic: realsense/rgbd
+min_depth_m: 0.07
+max_depth_m: 0.50
+eye_separation_m: 0.018
+convergence_m: 0.30
+max_depth_jump_m: 0.02

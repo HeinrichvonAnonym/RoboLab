@@ -70,8 +70,10 @@ class DynamixelRobot(Robot):
         ), f"joint_signs: {self._joint_signs}"
 
         if real:
-            self._driver = DynamixelDriver(joint_ids, port=port, baudrate=baudrate)
-            self._driver.set_torque_mode(False)
+            self._driver = DynamixelDriver(
+                joint_ids, port=port, baudrate=baudrate, use_fake_fallback=False
+            )
+            # The driver has already confirmed torque-off before starting reads.
         else:
             self._driver = FakeDynamixelDriver(joint_ids)
         self._torque_on = False
@@ -102,6 +104,9 @@ class DynamixelRobot(Robot):
 
     def num_dofs(self) -> int:
         return len(self._joint_ids)
+
+    def close(self) -> None:
+        self._driver.close()
 
     def get_joint_state(self) -> np.ndarray:
         pos = (self._driver.get_joints() - self._joint_offsets) * self._joint_signs

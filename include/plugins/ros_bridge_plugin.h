@@ -8,20 +8,14 @@
 #include <string>
 #include <vector>
 
-#include <ros/ros.h>
 #include <yaml-cpp/yaml.h>
-
-namespace ros {
-class NodeHandle;
-class AsyncSpinner;
-}  // namespace ros
 
 namespace robo_lab {
 
 class RosBridgePlugin : public Plugin {
  public:
-  RosBridgePlugin() = default;
-  ~RosBridgePlugin() override = default;
+  RosBridgePlugin();
+  ~RosBridgePlugin() override;
 
   bool initialize(const std::string& config_path) override;
   void run() override;
@@ -35,8 +29,11 @@ class RosBridgePlugin : public Plugin {
     std::string ros_type;
     std::string frame;  // optional ROS header.frame_id for stamped/pose messages
     std::vector<std::string> joint_names;
+    size_t qos_depth = 10;
+    bool best_effort = false;
   };
 
+  void cleanup();
   bool load_config(const std::string& config_path);
   static bool parse_topic_list(const YAML::Node& node, std::vector<BridgeTopic>* out);
 

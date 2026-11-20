@@ -1,0 +1,43 @@
+diff --git a/call/payload_type_picker.cc b/call/payload_type_picker.cc
+index 5d8be2f..5bb1fd6 100644
+--- a/call/payload_type_picker.cc
++++ b/call/payload_type_picker.cc
+@@ -406,7 +406,7 @@ void PayloadTypeRecorder::ReallowRedefinition() {
+ RTCError RtpHeaderExtensionRecorder::AddMapping(RtpHeaderExtensionId id,
+                                                 absl::string_view uri,
+                                                 bool encrypt) {
+-  auto it = uri_to_id_.find(std::pair{uri, encrypt});
++  auto it = uri_to_id_.find(std::pair{std::string(uri), encrypt});
+   if (it != uri_to_id_.end()) {
+     if (it->second != id) {
+       RTC_HISTOGRAM_BOOLEAN(
+@@ -429,7 +429,7 @@ RTCError RtpHeaderExtensionRecorder::AddMapping(RtpHeaderExtensionId id,
+ RTCErrorOr<RtpHeaderExtensionId> RtpHeaderExtensionRecorder::LookupId(
+     absl::string_view uri,
+     bool encrypt) const {
+-  auto it = uri_to_id_.find(std::pair{uri, encrypt});
++  auto it = uri_to_id_.find(std::pair{std::string(uri), encrypt});
+   if (it == uri_to_id_.end()) {
+     return RTCError(RTCErrorType::INVALID_PARAMETER,
+                     "No ID found for extension");
+diff --git a/rtc_base/ssl_stream_adapter.h b/rtc_base/ssl_stream_adapter.h
+index 0568bd0..7052a0d 100644
+--- a/rtc_base/ssl_stream_adapter.h
++++ b/rtc_base/ssl_stream_adapter.h
+@@ -14,6 +14,7 @@
+ #include <stddef.h>
+ #include <stdint.h>
+ 
++#include <cstddef>
+ #include <memory>
+ #include <optional>
+ #include <set>
+@@ -129,7 +130,7 @@ class SSLStreamAdapter : public StreamInterface {
+   static std::unique_ptr<SSLStreamAdapter> Create(
+       std::unique_ptr<StreamInterface> stream,
+       absl::AnyInvocable<void(SSLHandshakeError)> handshake_error,
+-      nullptr_t /*field_trials*/) {
++      std::nullptr_t /*field_trials*/) {
+     return Create(std::move(stream), std::move(handshake_error));
+   }
+ 
